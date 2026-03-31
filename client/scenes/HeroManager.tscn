@@ -1,0 +1,175 @@
+[gd_scene load_steps=2 format=3 uid="uid://hero_manager_12345"]
+
+[ext_resource type="Script" path="res://scripts/HeroManager.gd" id="1_hero_mgr"]
+
+[node name="HeroManager" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_hero_mgr")
+
+[node name="ColorRect" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.0901961, 0.101961, 0.141176, 1)
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 20
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="Header" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 30
+
+[node name="LblWelcome" type="Label" parent="MarginContainer/VBoxContainer/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 24
+text = "Chào [Username]"
+
+[node name="LblCoins" type="Label" parent="MarginContainer/VBoxContainer/Header"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.843137, 0, 1)
+theme_override_font_sizes/font_size = 20
+text = "💰 Tiền: 0 xu"
+
+[node name="BtnLogout" type="Button" parent="MarginContainer/VBoxContainer/Header"]
+custom_minimum_size = Vector2(100, 40)
+layout_mode = 2
+text = "Đăng xuất"
+
+[node name="HSplitContainer" type="HSplitContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+split_offset = 300
+
+[node name="LeftPanel" type="VBoxContainer" parent="MarginContainer/VBoxContainer/HSplitContainer"]
+layout_mode = 2
+theme_override_constants/separation = 15
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/HSplitContainer/LeftPanel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.4, 0.8, 1, 1)
+text = "DANH SÁCH HERO CỦA BẠN"
+
+[node name="ScrollContainer" type="ScrollContainer" parent="MarginContainer/VBoxContainer/HSplitContainer/LeftPanel"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="HeroListContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/HSplitContainer/LeftPanel/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="BtnGoToMatchmaking" type="Button" parent="MarginContainer/VBoxContainer/HSplitContainer/LeftPanel"]
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+theme_override_colors/font_color = Color(0, 1, 0, 1)
+disabled = true
+text = "👉 VÀO PHÒNG CHỜ"
+
+[node name="RightPanel" type="VBoxContainer" parent="MarginContainer/VBoxContainer/HSplitContainer"]
+layout_mode = 2
+
+[node name="TabContainer" type="TabContainer" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Tạo Hero Mới" type="Panel" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer"]
+layout_mode = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer/Tạo Hero Mới"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = 20.0
+offset_right = -20.0
+offset_bottom = -20.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 15
+
+[node name="TxtNewHeroName" type="LineEdit" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer/Tạo Hero Mới/VBoxContainer"]
+layout_mode = 2
+placeholder_text = "Tên tướng (Ví dụ: Yone Lửa)"
+
+[node name="TxtPrompt" type="TextEdit" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer/Tạo Hero Mới/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+placeholder_text = "Mô tả kỹ năng bằng ngôn ngữ tự nhiên..."
+wrap_mode = 1
+
+[node name="HBoxUGC" type="HBoxContainer" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer/Tạo Hero Mới/VBoxContainer"]
+layout_mode = 2
+
+[node name="BtnDrawVFX" type="Button" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer/Tạo Hero Mới/VBoxContainer/HBoxUGC"]
+layout_mode = 2
+text = "✏️ Vẽ hiệu ứng kỹ năng"
+
+[node name="LblUgcStatus" type="Label" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer/Tạo Hero Mới/VBoxContainer/HBoxUGC"]
+layout_mode = 2
+text = "Chưa vẽ"
+
+[node name="LabelModel" type="Label" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer/Tạo Hero Mới/VBoxContainer"]
+layout_mode = 2
+text = "🎭 Chọn Model 3D (Trang phục):"
+
+[node name="OptModelSelect" type="OptionButton" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer/Tạo Hero Mới/VBoxContainer"]
+layout_mode = 2
+
+[node name="HBoxModelAI" type="HBoxContainer" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer/Tạo Hero Mới/VBoxContainer"]
+layout_mode = 2
+
+[node name="TxtModelPrompt" type="LineEdit" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer/Tạo Hero Mới/VBoxContainer/HBoxModelAI"]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Mô tả model..."
+
+[node name="BtnBuyAIModel" type="Button" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer/Tạo Hero Mới/VBoxContainer/HBoxModelAI"]
+layout_mode = 2
+text = "✨ Tạo bằng AI (-50 xu)"
+
+[node name="BtnGenerateAndSave" type="Button" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer/Tạo Hero Mới/VBoxContainer"]
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+text = "💾 GỌI GEMINI & LƯU TƯỚNG"
+
+[node name="Chi Tiết Hero" type="Panel" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer"]
+visible = false
+layout_mode = 2
+
+[node name="TxtHeroDetail" type="RichTextLabel" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer/Chi Tiết Hero"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = 20.0
+offset_right = -20.0
+offset_bottom = -20.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Kho Đồ" type="Panel" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer"]
+visible = false
+layout_mode = 2

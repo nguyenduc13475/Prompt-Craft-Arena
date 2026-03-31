@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="PromptCraft-Arena"
-run/main_scene="res://scenes/Main.tscn"
+run/main_scene="res://scenes/Login.tscn"
 config/features=PackedStringArray("4.6", "Forward Plus")
 
 [autoload]
@@ -19,6 +19,8 @@ config/features=PackedStringArray("4.6", "Forward Plus")
 GameManager="*res://scripts/GameManager.gd"
 InputManager="*res://scripts/InputManager.gd"
 NetworkManager="*res://scripts/NetworkManager.gd"
+AuthManager="*res://scripts/AuthManager.gd"
+HeroAPIService="*res://scripts/HeroAPIService.gd"
 
 [display]
 

@@ -1,7 +1,11 @@
 import math
+import random  # Thêm import này ở đầu file nếu chưa có
 
-from app.core.state import global_game_state
 from app.models.object import GameObject
+
+# Khởi tạo biến trống để phá vỡ Circular Import.
+# Biến này sẽ được game_loop.py gán đè bằng state của Room tương ứng mỗi tick.
+global_game_state = None
 
 
 def safe_get_objects(location: tuple, radius: float = 50.0):
@@ -46,6 +50,7 @@ def safe_contain(coord: tuple, bounding_box: tuple, location: tuple) -> bool:
 SAFE_BUILTINS = {
     "get_objects": safe_get_objects,
     "create_object": safe_create_object,
+    "random": random,  # Cấp quyền cho AI và hệ thống gọi random
     "delete_object": safe_delete_object,
     "contain": safe_contain,
     "True": True,

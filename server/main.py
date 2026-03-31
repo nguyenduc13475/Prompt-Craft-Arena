@@ -2,14 +2,22 @@ import asyncio
 import os
 from contextlib import asynccontextmanager
 
+import app.models.user_hero  # BẮT BUỘC: Import để SQLAlchemy nhận diện các bảng trước khi create_all
 import uvicorn
-from app.api import routes, uploads, websockets
+from app.api import (  # Import thêm router mới
+    auth_routes,
+    hero_routes,
+    social_routes,
+    uploads,
+    websockets,
+)
 from app.core.game_loop import run_game_loop
-from app.core.state import global_game_state
-from app.models.object import GameObject
-from app.sandbox.compiler import compile_callback
+
+# Import Base và engine để tạo bảng
+from app.models.database import Base, engine
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware  # Thêm CORS để Godot gọi API được
 from fastapi.staticfiles import StaticFiles
 
 # Load environment variables from the .env file
@@ -18,45 +26,12 @@ load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 1. Tạo Tower / Trụ địch (Máu trâu, đứng im)
-    tower = GameObject(
-        team=2,
-        attributes={"hp": 2000, "max_hp": 2000, "size": [80, 80], "color": "DARK_RED"},
-    )
-    tower.coord = [900.0, 500.0]
-    global_game_state.add_object(tower)
-
-    # 2. Tạo Nhà lính (Spawner) tàng hình, sinh quái (Minion) mỗi 3 giây
-    spawner_code = """
-def execute(event):
-    if not hasattr(event.self, 'last_spawn'):
-        event.self.last_spawn = event.current_time
-    if event.current_time > event.self.last_spawn + 3.0:
-        event.self.last_spawn = event.current_time
-        def minion_ai(e):
-            # Quái di chuyển về phía Base phe người chơi [100, 500]
-            dx = 100 - e.self.coord[0]
-            dy = 500 - e.self.coord[1]
-            dist = math.hypot(dx, dy)
-            if dist > 50:
-                angle = math.atan2(dy, dx)
-                e.self.velocity = [math.cos(angle)*60, math.sin(angle)*60]
-            else:
-                e.self.velocity = [0.0, 0.0]
-            
-            # Gây sát thương nếu chạm đối phương
-            if not hasattr(e.self, 'last_atk'): e.self.last_atk = 0
-            if e.current_time > e.self.last_atk + 1.0:
-                e.self.last_atk = e.current_time
-                for obj in get_objects(e.self.coord, 40):
-                    if obj.team == 1 and hasattr(obj, 'hp'):
-                        obj.hp = obj.hp - 10
-        create_object({'team': 2, 'hp': 50, 'max_hp': 50, 'coord': [900, 500], 'size': [25, 25], 'color': 'ORANGE'}, minion_ai)
-"""
-    spawner = GameObject(team=2, attributes={"size": [0, 0]})
-    spawner.callback_code = spawner_code
-    spawner.callback_func = compile_callback(spawner_code)
-    global_game_state.add_object(spawner)
+    # KHỞI TẠO DATABASE (Tạo bảng nếu chưa có) - Chỉ dùng cho Prototype
+    print("[Server] Dang kiem tra va khoi tao Database...")
+    async with engine.begin() as conn:
+        # Cần import các model vào đây để SQLAlchemy biết mà tạo bảng
+        await conn.run_sync(Base.metadata.create_all)
+    print("[Server] Database da san sang.")
 
     # Khởi chạy Game Loop dưới dạng Background Task
     loop_task = asyncio.create_task(run_game_loop())
@@ -66,7 +41,16 @@ def execute(event):
 
 app = FastAPI(title="PromptCraft-Arena API", version="0.1.0", lifespan=lifespan)
 
-# Mount thư mục tĩnh để Godot có thể tải ảnh UGC về hiển thị
+# CẤU HÌNH CORS (Cho phép Godot Client kết nối API)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Prototype cho phép tất, production cần giới hạn
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Mount thư mục tĩnh
 os.makedirs("app/static/uploads", exist_ok=True)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
@@ -78,8 +62,10 @@ def read_root():
 
 # Mount routers
 app.include_router(websockets.router)
-app.include_router(routes.router)
 app.include_router(uploads.router)
+app.include_router(auth_routes.router, tags=["Auth"])  # Router đăng nhập
+app.include_router(hero_routes.router, tags=["Heroes"])  # Router quản lý tướng
+app.include_router(social_routes.router, tags=["Social"])  # Router Bạn bè/Bang hội
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

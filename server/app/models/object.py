@@ -37,6 +37,22 @@ class GameObject:
         self.coord = [0.0, 0.0]
         self.velocity = [0.0, 0.0]
 
+        # Hệ thống Tầm nhìn (Fog of War)
+        self.orientation = 0.0  # Góc quay hiện tại (Radian)
+        self.vision_range = 450.0  # Khoảng cách nhìn tối đa
+        import math
+
+        self.vision_angle = math.pi * 0.6  # Góc nhìn hình nón (Khoảng 108 độ)
+
+        # Hệ thống RPG (KDA, Vàng, Level, Kho đồ)
+        self.level = 1
+        self.exp = 0
+        self.gold = 0
+        self.kills = 0
+        self.deaths = 0
+        self.assists = 0
+        self.inventory = []  # Danh sách chứa dict của các Item
+
         # Các thuộc tính linh động (HP, mana, damage, ...)
         if attributes:
             for key, value in attributes.items():

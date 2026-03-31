@@ -1,5 +1,7 @@
+import uuid
 from typing import Any, Dict, List
 
+from app.core.maps import load_map
 from app.models.object import GameObject
 
 
@@ -7,7 +9,6 @@ class GameState:
     def __init__(self):
         self.objects: Dict[str, GameObject] = {}
         self.current_time: float = 0.0
-        # Hàng đợi lưu trữ input từ clients: { client_id: [inputs...] }
         self.client_inputs: Dict[str, List[Dict[str, Any]]] = {}
 
     def add_input(self, client_id: str, input_data: Dict[str, Any]):
@@ -32,12 +33,66 @@ class GameState:
         return self.objects.get(obj_id)
 
     def clean_up_deleted(self):
-        """Xóa hẳn các object được đánh dấu xóa ở tick trước"""
         keys_to_delete = [k for k, v in self.objects.items() if v.is_deleted]
         for k in keys_to_delete:
             del self.objects[k]
 
 
-# Biến toàn cục (Singleton) cho trận đấu hiện tại
-# (Trong thực tế nếu có nhiều phòng (rooms), biến này sẽ là 1 dict các GameState)
-global_game_state = GameState()
+class RoomManager:
+    def __init__(self):
+        self.rooms: Dict[str, GameState] = {}  # Lưu trữ các phòng đang chơi
+        # Hàng đợi: { map_type: [client_id_1, client_id_2, ...] }
+        self.queue: Dict[str, List[str]] = {"aram": [], "3lane": [], "random": []}
+        self.client_to_room: Dict[str, str] = {}  # Map client đang ở room nào
+        self.PLAYERS_PER_MATCH = 2  # Setup 2 người 1 phòng để test cho lẹ
+
+    def create_room(self, map_type: str, players: List[str]) -> str:
+        room_id = str(uuid.uuid4())
+        new_state = GameState()
+        load_map(new_state, map_type)  # Nạp bản đồ
+        self.rooms[room_id] = new_state
+
+        for p in players:
+            self.client_to_room[p] = room_id
+
+        return room_id
+
+    def remove_client(self, client_id: str):
+        # Rời hàng đợi
+        for q in self.queue.values():
+            # queue giờ chứa dict nên phải lọc
+            for p in list(q):
+                if p["client_id"] == client_id:
+                    q.remove(p)
+        if client_id in self.client_to_room:
+            del self.client_to_room[client_id]
+
+    def process_matchmaking(self, map_type: str) -> list:
+        """Thuật toán Smart Matchmaking (Breadth-First): Tìm trận đông nhất có thể"""
+        matches = []
+        queue = self.queue[map_type]
+
+        # Tìm số K (người/team) lớn nhất có thể (từ 15 lùi về 1)
+        # Để test 1 người chơi (dev mode), ta cho K lùi về 1. Nếu build thật thì lùi về 5.
+        for k in range(15, 0, -1):
+            # Tìm những người chấp nhận team có K người
+            valid_players = [
+                p for p in queue if p.get("min_p", 5) <= k <= p.get("max_p", 5)
+            ]
+
+            # Cần 2 team, mỗi team K người -> tổng cộng cần 2*k người
+            while len(valid_players) >= 2 * k:
+                # Bốc đủ số người vào 1 trận
+                match_players = valid_players[: 2 * k]
+                matches.append(match_players)
+
+                # Xóa họ khỏi hàng đợi
+                for p in match_players:
+                    queue.remove(p)
+                    valid_players.remove(p)
+
+        return matches
+
+
+room_manager = RoomManager()
+# Đã xóa global_game_state để triệt để fix circular import và chuẩn bị cho multi-room
