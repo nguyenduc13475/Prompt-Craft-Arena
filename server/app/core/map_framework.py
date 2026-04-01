@@ -13,9 +13,9 @@ def execute(event):
             dy = obj.coord[1] - event.self.coord[1]
             # Đẩy ra xa theo trục bị lấn sâu nhất
             if abs(dx) > abs(dy):
-                obj.coord[0] += 5 if dx > 0 else -5
+                obj.coord[0] = obj.coord[0] + (5 if dx > 0 else -5)
             else:
-                obj.coord[1] += 5 if dy > 0 else -5
+                obj.coord[1] = obj.coord[1] + (5 if dy > 0 else -5)
 """,
     "mud": """
 def execute(event):
@@ -23,12 +23,11 @@ def execute(event):
     objs = get_objects(event.self.coord, max(event.self.size[0], event.self.size[1])/2)
     for obj in objs:
         if getattr(obj, 'hp', None) is not None and obj.id != event.self.id:
-            obj.coord[0] -= obj.velocity[0] * 0.01 * 0.5
-            obj.coord[1] -= obj.velocity[1] * 0.01 * 0.5
+            obj.coord[0] = obj.coord[0] - (obj.velocity[0] * 0.01 * 0.5)
+            obj.coord[1] = obj.coord[1] - (obj.velocity[1] * 0.01 * 0.5)
 """,
     "spawner": """
 def execute(event):
-    import math
     if not hasattr(event.self, 'last_spawn'):
         event.self.last_spawn = event.current_time
     # Sinh lính dựa trên tham số spawn_rate

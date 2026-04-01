@@ -1,5 +1,5 @@
 from app.sandbox.builtins import SAFE_BUILTINS
-from RestrictedPython import compile_restricted
+from RestrictedPython import compile_restricted, safe_builtins
 from RestrictedPython.Eval import (
     default_guarded_getattr,
     default_guarded_getitem,
@@ -10,9 +10,6 @@ from RestrictedPython.Eval import (
 def compile_callback(code_str: str):
     """
     Biên dịch string code (do AI sinh ra) thành một hàm an toàn.
-    Kỳ vọng code_str có dạng:
-    def execute(event):
-        # logic ở đây...
     """
     if not code_str or code_str.strip() == "":
         return None
@@ -21,16 +18,24 @@ def compile_callback(code_str: str):
         # Biên dịch trong môi trường hạn chế
         byte_code = compile_restricted(code_str, "<generated_ai_code>", "exec")
 
-        # Thiết lập môi trường thực thi cục bộ (Sandboxed Local Environment)
         loc = {}
+
+        # 1. Kết hợp builtins an toàn của RestrictedPython (chứa __import__) với hàm custom của ta
+        merged_builtins = safe_builtins.copy()
+        merged_builtins.update(SAFE_BUILTINS)
+
         glob = {
-            "__builtins__": SAFE_BUILTINS,
+            "__builtins__": merged_builtins,
             "_getiter_": default_guarded_getiter,
             "_getitem_": default_guarded_getitem,
             "_getattr_": default_guarded_getattr,
-            # Cấp phép cho viết/thay đổi thuộc tính của object
             "_write_": lambda obj: obj,
         }
+
+        # 2. CỰC KỲ QUAN TRỌNG: Bơm trực tiếp module/hàm ('math', 'get_objects') vào global scope
+        # để code AI hoặc MapFramework gọi thẳng mà không cần lệnh import
+        for k, v in SAFE_BUILTINS.items():
+            glob[k] = v
 
         # Thực thi bytecode để nạp hàm 'execute' vào dict `loc`
         exec(byte_code, glob, loc)

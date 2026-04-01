@@ -48,9 +48,12 @@ async def upload_icon(file: UploadFile = File(...)):
 
 @router.post("/api/uploads/model")
 async def upload_model(file: UploadFile = File(...)):
-    """API cho phép user tự upload Model 3D (.glb)"""
+    """API cho phép user upload Model (.glb). Đã loại bỏ Blender Auto-Rig!"""
     if not file.filename.endswith(".glb"):
         raise HTTPException(status_code=400, detail="Chỉ chấp nhận định dạng .glb")
 
-    file_url = await save_uploaded_file(file, folder="models")
+    # Lưu thẳng file do user up lên (Mặc định file này phải có xương và animation sẵn)
+    file_url = await save_uploaded_file(file, folder="models/skins")
+
+    print(f"[Upload] Đã tải model mới (Skin): {file_url}")
     return {"message": "Tải model thành công", "url": file_url}

@@ -62,4 +62,13 @@ SAFE_BUILTINS = {
     "getattr": getattr,
     "delattr": delattr,
     "list": list,
+    # --- Cấp phép thêm các hàm Built-in cơ bản để tránh Sandbox Error ---
+    "max": max,
+    "min": min,
+    "abs": abs,
+    "int": int,
+    "float": float,
+    "str": str,
+    "len": len,
+    "round": round,
 }

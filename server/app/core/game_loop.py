@@ -71,6 +71,7 @@ async def run_game_loop():
                         for item in obj.inventory:
                             if item.get("drop", False):
                                 import app.sandbox.builtins as builtins
+                                from app.sandbox.compiler import compile_callback
 
                                 # Tạo GameObject Item trên sàn
                                 builtins.safe_create_object(
@@ -82,8 +83,8 @@ async def run_game_loop():
                                         "item_data": item,
                                         "name_display": item["name"],
                                     },
-                                    builtins.compile_callback(
-                                        "def execute(event):\n    looters = get_objects(event.self.coord, 20.0)\n    for l in looters:\n        if getattr(l, 'client_id', None):\n            l.inventory.append(event.self.item_data)\n            delete_object(event.self.id)\n            break"
+                                    compile_callback(
+                                        "def execute(event):\n    looters = get_objects(event.self.coord, 20.0)\n    for l in looters:\n        if getattr(l, 'client_id', None):\n            l.inventory = l.inventory + [event.self.item_data]\n            delete_object(event.self.id)\n            break"
                                     ),
                                 )
                         # Xóa đồ đã rớt khỏi túi người chết

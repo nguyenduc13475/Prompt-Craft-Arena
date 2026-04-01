@@ -45,6 +45,7 @@ class HeroSkillSet(Base):
     model_url = Column(
         String, default="/static/default_assets/mannequin.glb"
     )  # Ngoại hình mặc định
+    skins = Column(JSON, default=[])  # Danh sách URL trang phục bổ sung
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     owner = relationship("User", back_populates="heroes")

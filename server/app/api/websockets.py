@@ -94,6 +94,9 @@ class ConnectionManager:
                                 "color": getattr(obj, "color", "WHITE"),
                                 "vfx_type": getattr(obj, "vfx_type", "none"),
                                 "vfx_url": getattr(obj, "vfx_url", ""),
+                                "model_url": getattr(obj, "model_url", ""),
+                                "name_display": getattr(obj, "name_display", "Unknown"),
+                                "client_id": getattr(obj, "client_id", ""),
                                 "level": getattr(obj, "level", 1),
                                 "gold": getattr(obj, "gold", 0),
                                 "kills": getattr(obj, "kills", 0),
@@ -118,7 +121,12 @@ class ConnectionManager:
 
 
 async def load_hero_and_spawn(
-    room_id: str, client_id: str, hero_id: str, team: int, y_offset: float = 0
+    room_id: str,
+    client_id: str,
+    hero_id: str,
+    team: int,
+    y_offset: float = 0,
+    model_url: str = "",
 ):
     """Hàm bổ trợ để load dữ liệu tướng từ DB và nạp vào GameState"""
     print(
@@ -141,12 +149,26 @@ async def load_hero_and_spawn(
             # TODO: Gửi tin nhắn lỗi về cho Client qua WS
             return
 
-        # 1. Biên dịch code từ DB trong Sandbox (Logic dời từ routes.py cũ sang)
-        callback_func = compile_callback(hero_data.callback_code)
+        # 1. Xác định Code Logic sẽ chạy (Base code hay Skin code)
+        active_code = hero_data.callback_code
+        if model_url and model_url != getattr(hero_data, "model_url", ""):
+            # Tìm code đã được thuật toán map animation cho skin này
+            for s in hero_data.skins:
+                if isinstance(s, dict) and s.get("url") == model_url:
+                    active_code = s.get("code", active_code)
+                    break
+
+        # Biên dịch code trong Sandbox
+        callback_func = compile_callback(active_code)
 
         attributes = dict(hero_data.attributes)  # Copy dict
         if hero_data.vfx_url:
             attributes["ugc_vfx_url"] = hero_data.vfx_url
+
+        # Ưu tiên model_url được client chọn từ Sảnh, nếu không có thì lấy mặc định của Hero
+        attributes["model_url"] = (
+            model_url if model_url else getattr(hero_data, "model_url", "")
+        )
 
         # 2. Tạo GameObject
         hero_obj = GameObject(team=team, attributes=attributes, client_id=client_id)
@@ -202,6 +224,7 @@ async def handle_found_matches(matches_found, map_type):
                     p["hero_id"],
                     team,
                     spawn_y_offset,
+                    p.get("model_url", ""),
                 )
             )
 
@@ -289,6 +312,7 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                 player_entry = {
                     "client_id": client_id,
                     "hero_id": hero_id,
+                    "model_url": input_data.get("model_url", ""),
                     "min_p": min_p,
                     "max_p": max_p,
                 }
