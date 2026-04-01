@@ -25,8 +25,8 @@ var minimap_container: Control
 var chat_log: RichTextLabel
 var chat_input: LineEdit
 
-@onready var prompt_input = $VBoxContainer/PromptInput
-@onready var generate_btn = $VBoxContainer/GenerateButton
+@onready var prompt_input = find_child("PromptInput", true, false)
+@onready var generate_btn = find_child("GenerateButton", true, false)
 
 
 func open_shop(shop_id: String, stock: Array):
@@ -37,12 +37,15 @@ func open_shop(shop_id: String, stock: Array):
 	for item in stock:
 		var hbox = HBoxContainer.new()
 		var lbl = Label.new()
-		lbl.text = item.name + " (" + str(item.price) + "G)"
+		lbl.text = str(item.get("name", "Unknown")) + " (" + str(item.get("price", 0)) + "G)"
 		lbl.custom_minimum_size = Vector2(150, 0)
 		var btn = Button.new()
 		btn.text = "Mua"
 		btn.pressed.connect(
-			func(): NetworkManager.send_custom("buy_item", {"shop_id": shop_id, "item_id": item.id})
+			func():
+				NetworkManager.send_custom(
+					"buy_item", {"shop_id": shop_id, "item_id": item.get("id", "")}
+				)
 		)
 		hbox.add_child(lbl)
 		hbox.add_child(btn)
@@ -50,6 +53,10 @@ func open_shop(shop_id: String, stock: Array):
 
 
 func _ready():
+	# Mở lại InputManager bị khóa từ màn hình Login để người chơi điều khiển được tướng
+	if has_node("/root/InputManager"):
+		get_node("/root/InputManager").set_process_unhandled_input(true)
+
 	# --- Dựng UI RPG thủ công ---
 	lbl_stats = Label.new()
 	lbl_stats.position = Vector2(10, 10)
@@ -93,10 +100,13 @@ func _ready():
 
 	_setup_minimap()
 
-	if has_node("VBoxContainer/GenerateButton"):
-		$VBoxContainer/GenerateButton.pressed.connect(_on_generate_pressed)
+	if generate_btn:
+		generate_btn.pressed.connect(_on_generate_pressed)
 		self.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	$VBoxContainer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	var vbox = find_child("VBoxContainer", true, false)
+	if vbox:
+		vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	http_upload = HTTPRequest.new()
 	add_child(http_upload)
@@ -108,12 +118,19 @@ func _ready():
 func _setup_ugc_canvas():
 	var toggle_btn = Button.new()
 	toggle_btn.text = "✏️ Mở bảng vẽ kỹ năng"
-	$VBoxContainer.add_child(toggle_btn)
-	$VBoxContainer.move_child(toggle_btn, 0)  # Đẩy lên vị trí đầu tiên của thanh menu cho dễ nhìn
-
 	var save_ugc_btn = Button.new()
 	save_ugc_btn.text = "💾 Lưu & Tải lên máy chủ"
-	$VBoxContainer.add_child(save_ugc_btn)
+
+	var vbox = find_child("VBoxContainer", true, false)
+	if vbox:
+		vbox.add_child(toggle_btn)
+		vbox.move_child(toggle_btn, 0)  # Đẩy lên vị trí đầu tiên của thanh menu cho dễ nhìn
+		vbox.add_child(save_ugc_btn)
+	else:
+		add_child(toggle_btn)
+		add_child(save_ugc_btn)
+		toggle_btn.position = Vector2(10, 10)
+		save_ugc_btn.position = Vector2(10, 50)
 
 	draw_panel = Panel.new()
 	draw_panel.size = Vector2(400, 400)
@@ -176,10 +193,10 @@ func _on_save_ugc_pressed():
 	await RenderingServer.frame_post_draw
 	var img = get_viewport().get_texture().get_image()
 	var region = Rect2i(
-		draw_panel.global_position.x,
-		draw_panel.global_position.y,
-		draw_panel.size.x,
-		draw_panel.size.y
+		int(draw_panel.global_position.x),
+		int(draw_panel.global_position.y),
+		int(draw_panel.size.x),
+		int(draw_panel.size.y)
 	)
 	var cropped_img = img.get_region(region)
 
@@ -208,11 +225,11 @@ func _update_hud():
 			lbl_stats.text = (
 				"Lvl: %d | 💰 %d\nK/D/A: %d / %d / %d"
 				% [
-					data.get("level", 1),
-					data.get("gold", 0),
-					data.get("kills", 0),
-					data.get("deaths", 0),
-					data.get("assists", 0)
+					int(data.get("level", 1)),
+					int(data.get("gold", 0)),
+					int(data.get("kills", 0)),
+					int(data.get("deaths", 0)),
+					int(data.get("assists", 0))
 				]
 			)
 

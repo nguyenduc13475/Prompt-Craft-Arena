@@ -158,7 +158,7 @@ text = "💾 GỌI GEMINI & LƯU TƯỚNG"
 visible = false
 layout_mode = 2
 
-[node name="TxtHeroDetail" type="RichTextLabel" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer/Chi Tiết Hero"]
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer/Chi Tiết Hero"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -169,6 +169,68 @@ offset_right = -20.0
 offset_bottom = -20.0
 grow_horizontal = 2
 grow_vertical = 2
+theme_override_constants/separation = 15
+
+[node name="LblEditName" type="Label" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer/Chi Tiết Hero/VBoxContainer"]
+layout_mode = 2
+text = "Tên Hero:"
+
+[node name="TxtEditName" type="LineEdit" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer/Chi Tiết Hero/VBoxContainer"]
+layout_mode = 2
+
+[node name="LblEditModel" type="Label" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer/Chi Tiết Hero/VBoxContainer"]
+layout_mode = 2
+text = "Trang phục / Model 3D:"
+
+[node name="OptEditModel" type="OptionButton" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer/Chi Tiết Hero/VBoxContainer"]
+layout_mode = 2
+
+[node name="HBoxPromptToggle" type="HBoxContainer" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer/Chi Tiết Hero/VBoxContainer"]
+layout_mode = 2
+
+[node name="LblPrompt" type="Label" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer/Chi Tiết Hero/VBoxContainer/HBoxPromptToggle"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Chi tiết Logic Kỹ Năng:"
+
+[node name="OptPromptCode" type="OptionButton" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer/Chi Tiết Hero/VBoxContainer/HBoxPromptToggle"]
+layout_mode = 2
+item_count = 2
+selected = 0
+popup/item_0/text = "Hiển thị Prompt (Ngôn ngữ tự nhiên)"
+popup/item_0/id = 0
+popup/item_1/text = "Hiển thị Code (Python Sandbox)"
+popup/item_1/id = 1
+
+[node name="TxtReadonlyPrompt" type="TextEdit" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer/Chi Tiết Hero/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+editable = false
+wrap_mode = 1
+
+[node name="LblSkins" type="Label" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer/Chi Tiết Hero/VBoxContainer"]
+layout_mode = 2
+text = "Danh sách Trang Phục (Skins):"
+
+[node name="ItemListSkins" type="ItemList" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer/Chi Tiết Hero/VBoxContainer"]
+custom_minimum_size = Vector2(0, 60)
+layout_mode = 2
+
+[node name="HBoxAddSkin" type="HBoxContainer" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer/Chi Tiết Hero/VBoxContainer"]
+layout_mode = 2
+
+[node name="OptNewSkin" type="OptionButton" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer/Chi Tiết Hero/VBoxContainer/HBoxAddSkin"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="BtnAddSkin" type="Button" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer/Chi Tiết Hero/VBoxContainer/HBoxAddSkin"]
+layout_mode = 2
+text = "Thêm Trang Phục"
+
+[node name="BtnSaveChanges" type="Button" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer/Chi Tiết Hero/VBoxContainer"]
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+text = "LƯU THAY ĐỔI"
 
 [node name="Kho Đồ" type="Panel" parent="MarginContainer/VBoxContainer/HSplitContainer/RightPanel/TabContainer"]
 visible = false

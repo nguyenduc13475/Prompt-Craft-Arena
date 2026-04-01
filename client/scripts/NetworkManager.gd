@@ -10,11 +10,22 @@ var current_room_id: String = ""
 func connect_to_server():
 	if not AuthManager.is_logged_in:
 		return
+
+	# CHẶN LỖI: Chỉ gọi connect nếu socket thực sự đang đóng
+	if websocket.get_ready_state() != WebSocketPeer.STATE_CLOSED:
+		print("[WS] Socket đang mở hoặc đang kết nối, bỏ qua lệnh connect mới.")
+		return
+
 	client_id = str(AuthManager.user_id)  # Dùng User ID để server nhận diện trong DB
 
 	var url = "ws://127.0.0.1:8000/ws/" + client_id
 	print("[WS] Dang ket noi voi Client ID cố định (User ID): ", client_id)
+
 	var err = websocket.connect_to_url(url)
+	if err != OK:
+		print("[WS Lỗi] Không thể gọi connect_to_url, mã lỗi: ", err)
+	else:
+		set_process(true)  # Đảm bảo vòng lặp poll() được đánh thức
 
 
 func _ready():
@@ -31,9 +42,7 @@ func _process(_delta):
 			var message = packet.get_string_from_utf8()
 			_handle_server_message(message)
 
-	elif state == WebSocketPeer.STATE_CLOSED:
-		print("Mất kết nối với Server...")
-		set_process(false)
+	# Bỏ hẳn đoạn chặn STATE_CLOSED để hàm poll() luôn được chạy
 
 
 func _handle_server_message(json_str: String):
@@ -74,7 +83,7 @@ func _handle_server_message(json_str: String):
 
 
 # --- THAY ĐỔI LOGIC JOIN QUEUE THÔNG MINH ---
-func join_queue(map_type: String, min_p: int = 1, max_p: int = 5):
+func join_queue(map_type: String, min_p: int = 1, max_p: int = 5, model_url: String = ""):
 	if websocket.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		var hero_id = GameManager.selected_battle_hero_id
 		if hero_id == "":
@@ -85,6 +94,7 @@ func join_queue(map_type: String, min_p: int = 1, max_p: int = 5):
 			"type": "join_queue",
 			"map_type": map_type,
 			"hero_id": hero_id,
+			"model_url": model_url,
 			"min_p": min_p,
 			"max_p": max_p
 		}

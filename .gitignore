@@ -6,6 +6,7 @@ _engine/
 *.glb
 *.glb.import
 server/app/static/uploads/
+server/app/static/default_assets/
 server/promptcraft.db
 
 # --- Python ---
