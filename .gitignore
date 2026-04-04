@@ -3,10 +3,6 @@ client/.godot/
 client/export_presets.cfg
 client/**/*.translation
 _engine/
-*.glb
-*.glb.import
-server/app/static/uploads/
-server/app/static/default_assets/
 server/promptcraft.db
 
 # --- Python ---

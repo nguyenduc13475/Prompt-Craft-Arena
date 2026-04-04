@@ -79,7 +79,8 @@ func _handle_server_message(json_str: String):
 			get_tree().current_scene = gameover_node
 		# Cập nhật state game bình thường
 		elif data.has("objects"):
-			GameManager.update_objects(data["objects"])
+			var is_night = data.get("is_night", false)
+			GameManager.update_objects(data["objects"], is_night)
 
 
 # --- THAY ĐỔI LOGIC JOIN QUEUE THÔNG MINH ---

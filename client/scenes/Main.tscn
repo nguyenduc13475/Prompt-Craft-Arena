@@ -1,32 +1,64 @@
-[gd_scene load_steps=3 format=3 uid="uid://b1x1a1a1a1a1a"]
+[gd_scene load_steps=5 format=3 uid="uid://b1x1a1a1a1a1a"]
 
-[ext_resource type="Script" path="res://scripts/UI.gd" id="1_ui"]
+[ext_resource type="Script" uid="uid://dj7op0d21vgbh" path="res://scripts/UI.gd" id="1_ui"]
+[ext_resource type="Shader" path="res://assets/terrain_splatmap.gdshader" id="2_shader"]
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_floor"]
-albedo_color = Color(0.18, 0.2, 0.25, 1)
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_terrain"]
+render_priority = 0
+shader = ExtResource("2_shader")
+shader_parameter/grass_color = Color(0.15, 0.35, 0.15, 1)
+shader_parameter/dirt_color = Color(0.35, 0.25, 0.15, 1)
+shader_parameter/path_color = Color(0.40, 0.35, 0.25, 1)
+shader_parameter/noise_scale = 0.05
+shader_parameter/height_scale = 15.0
 
-[node name="Main" type="Node3D"]
+[sub_resource type="PlaneMesh" id="PlaneMesh_floor"]
+size = Vector2(1000, 1000)
+subdivide_width = 50
+subdivide_depth = 50
 
-[node name="Floor" type="CSGBox3D" parent="."]
+[sub_resource type="Environment" id="Environment_MOBA"]
+background_mode = 1
+background_color = Color(0.05, 0.06, 0.08, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.3, 0.35, 0.45, 1)
+tonemap_mode = 2
+tonemap_exposure = 1.1
+ssao_enabled = true
+ssao_radius = 2.0
+ssao_intensity = 3.0
+glow_enabled = true
+glow_intensity = 1.5
+glow_bloom = 0.2
+glow_blend_mode = 0
+volumetric_fog_enabled = true
+volumetric_fog_density = 0.002
+volumetric_fog_albedo = Color(0.1, 0.15, 0.25, 1)
 
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 500, -1, 500)
-size = Vector3(1000, 2, 1000)
-material = SubResource("StandardMaterial3D_floor")
+[node name="Main" type="Node3D" unique_id=1276603877]
 
-[node name="Camera3D" type="Camera3D" parent="."]
+[node name="Floor" type="MeshInstance3D" parent="." unique_id=188726245]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 500, 0, 500)
+mesh = SubResource("PlaneMesh_floor")
+surface_material_override/0 = SubResource("ShaderMaterial_terrain")
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=1631699559]
 transform = Transform3D(1, 0, 0, 0, 0.642788, 0.766044, 0, -0.766044, 0.642788, 500, 150, 620)
 current = true
 fov = 60.0
 far = 2000.0
 
-[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=393640750]
 transform = Transform3D(0.866025, 0.433013, -0.25, 0, 0.258819, 0.965926, 0.5, -0.866025, 0.258819, 500, 1000, 500)
 shadow_enabled = true
 directional_shadow_mode = 0
 
-[node name="UILayer" type="CanvasLayer" parent="."]
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_MOBA")
 
-[node name="Control" type="Control" parent="UILayer"]
+[node name="UILayer" type="CanvasLayer" parent="." unique_id=1499905631]
+
+[node name="Control" type="Control" parent="UILayer" unique_id=892395683]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -35,7 +67,7 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_ui")
 
-[node name="VBoxContainer" type="VBoxContainer" parent="UILayer/Control"]
+[node name="VBoxContainer" type="VBoxContainer" parent="UILayer/Control" unique_id=1817492716]
 layout_mode = 0
 offset_left = 10.0
 offset_top = 10.0
@@ -43,10 +75,10 @@ offset_right = 310.0
 offset_bottom = 100.0
 mouse_filter = 2
 
-[node name="PromptInput" type="LineEdit" parent="UILayer/Control/VBoxContainer"]
+[node name="PromptInput" type="LineEdit" parent="UILayer/Control/VBoxContainer" unique_id=1947431500]
 layout_mode = 2
 placeholder_text = "Nhập kỹ năng mới (Test ingame)..."
 
-[node name="GenerateButton" type="Button" parent="UILayer/Control/VBoxContainer"]
+[node name="GenerateButton" type="Button" parent="UILayer/Control/VBoxContainer" unique_id=1110250488]
 layout_mode = 2
 text = "Tạo bằng Gemini"

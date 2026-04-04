@@ -9,6 +9,7 @@ class GameState:
     def __init__(self):
         self.objects: Dict[str, GameObject] = {}
         self.current_time: float = 0.0
+        self.is_night: bool = False  # Cờ hiệu chu kỳ ngày đêm
         self.client_inputs: Dict[str, List[Dict[str, Any]]] = {}
 
     def add_input(self, client_id: str, input_data: Dict[str, Any]):

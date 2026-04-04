@@ -35,8 +35,14 @@ class ConnectionManager:
         """Kiểm tra target có nằm trong tầm nhìn của viewer không"""
         if viewer.team == target.team:
             return True  # Shared vision với đồng minh
-        if getattr(target, "is_shop", False):
-            return True  # Cửa hàng luôn hiển thị
+        if getattr(target, "is_shop", False) or getattr(target, "is_nexus", False):
+            return True  # Cửa hàng và Nhà chính luôn hiển thị
+
+        # LOGIC BỤI CỎ (BUSH)
+        target_bush = getattr(target, "in_bush_id", "")
+        viewer_bush = getattr(viewer, "in_bush_id", "")
+        if target_bush != "" and target_bush != viewer_bush:
+            return False  # Target ở trong bụi, mình ở ngoài hoặc ở bụi khác -> Mù
 
         import math
 
@@ -110,6 +116,7 @@ class ConnectionManager:
                     # 3. Gửi state đã đóng gói riêng cho Client này
                     state_data = {
                         "time": state.current_time,
+                        "is_night": state.is_night,
                         "objects": visible_objects,
                     }
                     try:
@@ -145,9 +152,18 @@ async def load_hero_and_spawn(
         hero_data = result.scalars().first()
 
         if not hero_data:
-            print(f"[Loi] Khong tim thay Hero ID {hero_id} trong DB!")
-            # TODO: Gửi tin nhắn lỗi về cho Client qua WS
-            return
+            print(
+                f"[Cảnh Báo] Khong tim thay Hero ID {hero_id}. Đang tự động nạp tướng mặc định (Huan Rose)..."
+            )
+            result = await db.execute(
+                select(HeroSkillSet).where(HeroSkillSet.name == "Huan Rose")
+            )
+            hero_data = result.scalars().first()
+            if not hero_data:
+                print(
+                    "[Lỗi Nghiêm Trọng] Không tìm thấy cả tướng mặc định trong DB. Hủy spawn!"
+                )
+                return
 
         # 1. Xác định Code Logic sẽ chạy (Base code hay Skin code)
         active_code = hero_data.callback_code
@@ -174,9 +190,11 @@ async def load_hero_and_spawn(
         hero_obj = GameObject(team=team, attributes=attributes, client_id=client_id)
         hero_obj.callback_func = callback_func
 
-        # Vị trí spawn có offset để tránh đè nhau trong combat tổng
+        # Vị trí spawn có offset để tránh đè nhau trong combat tổng (Góc B-L và T-R)
         hero_obj.coord = (
-            [150.0, 500.0 + y_offset] if team == 1 else [850.0, 500.0 + y_offset]
+            [100.0 + y_offset, 100.0 + y_offset]
+            if team == 1
+            else [900.0 + y_offset, 900.0 + y_offset]
         )
         hero_obj.name_display = hero_data.name  # Thêm thuộc tính hiển thị tên
 

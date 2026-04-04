@@ -12,9 +12,10 @@ from app.api import (  # Import thêm router mới
     websockets,
 )
 from app.core.game_loop import run_game_loop
+from app.core.seed import seed_data
 
 # Import Base và engine để tạo bảng
-from app.models.database import Base, engine
+from app.models.database import AsyncSessionLocal, Base, engine
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware  # Thêm CORS để Godot gọi API được
@@ -31,6 +32,11 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         # Cần import các model vào đây để SQLAlchemy biết mà tạo bảng
         await conn.run_sync(Base.metadata.create_all)
+
+    # Nạp dữ liệu Seed (10 Tướng mặc định)
+    async with AsyncSessionLocal() as session:
+        await seed_data(session)
+
     print("[Server] Database da san sang.")
 
     # Khởi chạy Game Loop dưới dạng Background Task

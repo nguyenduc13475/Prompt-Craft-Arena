@@ -1,10 +1,15 @@
 import asyncio
+import json
+import math
 import time
 
-# Import manager sau khi đã tạo ở websockets (sẽ xử lý vòng lặp import bên dưới)
+import app.sandbox.builtins as sandbox_builtins
+
+# Import manager sau khi đã tạo ở websockets
 from app.api.websockets import manager
 from app.core.state import room_manager
 from app.models.object import Event
+from app.sandbox.compiler import compile_callback
 
 
 async def run_game_loop():
@@ -23,6 +28,10 @@ async def run_game_loop():
             for obj_id, obj in list(state.objects.items()):
                 if obj.is_deleted:
                     continue
+
+                # Reset cờ môi trường mỗi tick (sẽ được map_framework gắn lại nếu vẫn đứng trong đó)
+                obj.in_bush_id = ""
+                obj.in_river_id = ""
 
                 # --- XỬ LÝ NỘI TẠI ITEM (Ví dụ giảm tốc độ chạy) ---
                 speed_mult = 1.0
@@ -50,11 +59,8 @@ async def run_game_loop():
                             event_type=input_data.get("type"),
                             coord=input_data.get("coord", obj.coord),
                         )
-                        # Hack tạm thời: gán state hiện tại cho hàm builtins
-                        # (Giải pháp lý tưởng là truyền state vào Event, nhưng để "breadth-first" nhanh gọn ta tạm dùng global)
-                        import app.sandbox.builtins as builtins
-
-                        builtins.global_game_state = state
+                        # Truyền state trực tiếp cho builtins một lần trước khi gọi callback
+                        sandbox_builtins.global_game_state = state
 
                         try:
                             obj.callback_func(event)
@@ -70,11 +76,8 @@ async def run_game_loop():
                     if hasattr(obj, "inventory"):
                         for item in obj.inventory:
                             if item.get("drop", False):
-                                import app.sandbox.builtins as builtins
-                                from app.sandbox.compiler import compile_callback
-
                                 # Tạo GameObject Item trên sàn
-                                builtins.safe_create_object(
+                                sandbox_builtins.safe_create_object(
                                     {
                                         "team": 4,
                                         "coord": list(obj.coord),
@@ -102,7 +105,6 @@ async def run_game_loop():
                         obj.is_deleted = True
 
                         # 3. FARM QUÁI LẤY TIỀN/EXP (Thưởng cho Tướng gần nhất)
-                        import math
 
                         nearest_hero = None
                         min_dist = 300.0
@@ -147,6 +149,11 @@ async def run_game_loop():
                     winner_team = 2 if obj.team == 1 else 1
                     break
 
+            # --- CẬP NHẬT CHU KỲ NGÀY/ĐÊM ---
+            # Ví dụ: Mỗi 60 giây đổi ngày đêm 1 lần
+            is_night_now = int(state.current_time) % 120 >= 60
+            state.is_night = is_night_now
+
             if game_over:
                 print(f"[Game Loop] Room {room_id} ket thuc. Team {winner_team} win!")
                 # Thu thập thống kê người chơi
@@ -165,14 +172,10 @@ async def run_game_loop():
                             }
                         )
 
-                # Gửi gói tin Game Over
-                import json
-
                 game_over_msg = json.dumps(
                     {"type": "game_over", "winner_team": winner_team, "stats": stats}
                 )
 
-                # Gửi cho tất cả client trong phòng
                 for c_id, r_id in list(room_manager.client_to_room.items()):
                     if r_id == room_id and c_id in manager.active_connections:
                         asyncio.create_task(

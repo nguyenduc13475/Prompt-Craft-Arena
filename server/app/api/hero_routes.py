@@ -10,6 +10,7 @@ from app.services import auth_service
 from app.services.skill_balancer import generate_skill_logic, map_animations_with_ai
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm.attributes import flag_modified
@@ -133,9 +134,10 @@ async def list_my_heroes(
 ):
     """Lay danh sach hero da tao cua User dang nhap"""
 
+    # Load cả Hero của user đang đăng nhập VÀ Hero của user 'system' (id=1)
     result = await db.execute(
         select(HeroSkillSet)
-        .where(HeroSkillSet.owner_id == user_id)
+        .where(or_(HeroSkillSet.owner_id == user_id, HeroSkillSet.owner_id == 1))
         .order_by(HeroSkillSet.created_at.desc())
     )
     heroes = result.scalars().all()

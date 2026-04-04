@@ -113,6 +113,12 @@ func _ready():
 	btn_3lane.pressed.connect(func(): _start_match("3lane"))
 	btn_random.pressed.connect(func(): _start_match("random"))
 
+	# Kiểm tra nếu chưa có Hero thì khóa nút tìm trận
+	if GameManager.selected_battle_hero_id == "":
+		status_label.text = "⚠️ VUI LÒNG QUAY LẠI VÀ CHỌN 1 HERO ĐỂ VÀO TRẬN!"
+		status_label.modulate = Color.RED
+		_disable_buttons(true)
+
 	NetworkManager.match_found.connect(_on_match_found)
 
 

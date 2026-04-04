@@ -1,17 +1,35 @@
+import random
+
 from app.models.object import GameObject
 from app.sandbox.compiler import compile_callback
 
 # Thư viện Callback tiêu chuẩn cho Terrain/Cấu trúc
 TERRAIN_CALLBACKS = {
+    "bush": """
+def execute(event):
+    # Những ai đứng trong bụi cỏ sẽ được gắn cờ in_bush
+    # Lưu ý: Sandbox không cho dùng +=, -= nên ta phải gán trực tiếp
+    objs = get_objects(event.self.coord, max(event.self.size[0], event.self.size[1])/2)
+    for obj in objs:
+        if getattr(obj, 'hp', None) is not None:
+            obj.in_bush_id = event.self.id
+""",
+    "river": """
+def execute(event):
+    # Làm chậm những ai đi ngang qua sông 20%
+    objs = get_objects(event.self.coord, max(event.self.size[0], event.self.size[1])/2)
+    for obj in objs:
+        if getattr(obj, 'hp', None) is not None and getattr(obj, 'in_river_id', '') != event.self.id:
+            obj.in_river_id = event.self.id
+""",
     "wall": """
 def execute(event):
-    # Đẩy lùi các object có máu (Hero, Minion) khi va vào tường (AABB Collider đơn giản)
+    # Đẩy lùi các object có máu khi va vào tường (AABB Collider)
     objs = get_objects(event.self.coord, max(event.self.size[0], event.self.size[1])/2 + 20)
     for obj in objs:
         if getattr(obj, 'hp', None) is not None and obj.id != event.self.id:
             dx = obj.coord[0] - event.self.coord[0]
             dy = obj.coord[1] - event.self.coord[1]
-            # Đẩy ra xa theo trục bị lấn sâu nhất
             if abs(dx) > abs(dy):
                 obj.coord[0] = obj.coord[0] + (5 if dx > 0 else -5)
             else:
@@ -19,7 +37,6 @@ def execute(event):
 """,
     "mud": """
 def execute(event):
-    # Đầm lầy: Làm chậm 50% bằng cách kéo giật lùi vị trí mỗi tick
     objs = get_objects(event.self.coord, max(event.self.size[0], event.self.size[1])/2)
     for obj in objs:
         if getattr(obj, 'hp', None) is not None and obj.id != event.self.id:
@@ -30,78 +47,239 @@ def execute(event):
 def execute(event):
     if not hasattr(event.self, 'last_spawn'):
         event.self.last_spawn = event.current_time
-    # Sinh lính dựa trên tham số spawn_rate
-    if event.current_time > event.self.last_spawn + getattr(event.self, 'spawn_rate', 5.0):
+    if event.current_time > event.self.last_spawn + getattr(event.self, 'spawn_rate', 15.0):
         event.self.last_spawn = event.current_time
+        
         def minion_ai(e):
-            # Minion tự động tìm đường chim bay thẳng về target_base
-            target_coord = getattr(e.self, 'target_base', [500, 500])
-            dx = target_coord[0] - e.self.coord[0]
-            dy = target_coord[1] - e.self.coord[1]
-            dist = math.hypot(dx, dy)
-            if dist > 50:
-                angle = math.atan2(dy, dx)
-                e.self.velocity = [math.cos(angle)*60, math.sin(angle)*60]
-                e.self.orientation = angle
+            # Di chuyển theo Waypoints
+            wps = getattr(e.self, 'waypoints', [])
+            idx = getattr(e.self, 'wp_index', 0)
+            if idx < len(wps):
+                target_coord = wps[idx]
+                dx = target_coord[0] - e.self.coord[0]
+                dy = target_coord[1] - e.self.coord[1]
+                dist = math.hypot(dx, dy)
+                if dist > 30:
+                    angle = math.atan2(dy, dx)
+                    e.self.velocity = [math.cos(angle)*80, math.sin(angle)*80]
+                    e.self.orientation = angle
+                else:
+                    e.self.wp_index = idx + 1
             else:
                 e.self.velocity = [0.0, 0.0]
-        # Sinh lính
+            
+            # AI Tấn công cơ bản
+            if not hasattr(e.self, 'last_atk'): e.self.last_atk = 0
+            if e.current_time > e.self.last_atk + 1.5:
+                enemies = get_objects(e.self.coord, 120.0)
+                for en in enemies:
+                    if en.team != e.self.team and getattr(en, 'hp', None) is not None and en.hp > 0:
+                        en.hp = en.hp - getattr(e.self, 'attack_damage', 15)
+                        e.self.last_atk = e.current_time
+                        e.self.velocity = [0.0, 0.0] # Dừng lại để đánh
+                        break
+
         create_object({
-            'team': event.self.team, 
-            'hp': 100, 'max_hp': 100, 
-            'coord': list(event.self.coord), 
-            'size': [25, 25], 
-            'color': 'ORANGE', 
-            'bounty': 30, 'exp_reward': 20, 
-            'target_base': getattr(event.self, 'target_base', [500,500])
+            'team': event.self.team, 'hp': 300, 'max_hp': 300, 
+            'coord': list(event.self.coord), 'size': [20, 20], 
+            'color': 'DODGER_BLUE' if event.self.team==1 else 'CRIMSON', 
+            'bounty': 20, 'exp_reward': 20, 
+            'waypoints': getattr(event.self, 'waypoints', []), 'wp_index': 0,
+            'model_url': getattr(event.self, 'minion_model', '')
         }, minion_ai)
+""",
+    "tower": """
+def execute(event):
+    if not hasattr(event.self, 'last_attack'):
+        event.self.last_attack = event.current_time
+        
+    if getattr(event.self, 'hp', 0) <= 0:
+        event.self.is_deleted = True
+        return
+
+    # Tốc đánh của trụ
+    if event.current_time > event.self.last_attack + getattr(event.self, 'attack_speed', 1.2):
+        enemies = get_objects(event.self.coord, getattr(event.self, 'attack_range', 300.0))
+        target = None
+        for e in enemies:
+            if e.team != event.self.team and getattr(e, 'hp', None) is not None and e.hp > 0:
+                target = e
+                break
+                
+        if target:
+            event.self.last_attack = event.current_time
+            target_pos = list(target.coord)
+            
+            def bullet_cb(ev):
+                if not hasattr(ev.self, 'target_pos'):
+                    ev.self.target_pos = target_pos
+                dx = ev.self.target_pos[0] - ev.self.coord[0]
+                dy = ev.self.target_pos[1] - ev.self.coord[1]
+                dist = math.hypot(dx, dy)
+                if dist < 20:
+                    hit_objs = get_objects(ev.self.coord, 40.0)
+                    for ho in hit_objs:
+                        if ho.team != ev.self.team and getattr(ho, 'hp', None) is not None:
+                            ho.hp = ho.hp - getattr(ev.self, 'damage', 120)
+                    delete_object(ev.self.id)
+                else:
+                    angle = math.atan2(dy, dx)
+                    ev.self.velocity = [math.cos(angle)*500, math.sin(angle)*500]
+                    
+            create_object({
+                'team': event.self.team, 'coord': list(event.self.coord),
+                'size': [15, 15], 'color': 'YELLOW', 
+                'damage': getattr(event.self, 'attack_damage', 120)
+            }, bullet_cb)
 """,
 }
 
 
 class MapFramework:
     @staticmethod
-    def load_from_config(game_state, config_dict: dict):
-        """
-        Duyệt qua cấu hình JSON Dictionary và sinh các GameObject tương ứng vào game_state.
-        Điều này giúp giải phóng hoàn toàn code Hardcode trong game.
-        """
-        objects_data = config_dict.get("objects", [])
+    @staticmethod
+    def load_from_layers(game_state, layers: dict):
+        CELL_SIZE = 40.0  # 25x25 grid * 40 = 1000x1000 map
 
-        for obj_data in objects_data:
-            obj_type = obj_data.get("type", "generic")
-            team = obj_data.get("team", 3)  # Mặc định 3 là Môi trường/Neutral
+        wp_t1_top = [[100, 400], [100, 900], [500, 900], [900, 900]]
+        wp_t1_mid = [[300, 300], [500, 500], [700, 700], [900, 900]]
+        wp_t1_bot = [[400, 100], [900, 100], [900, 500], [900, 900]]
+        wp_t2_top = [[500, 900], [100, 900], [100, 400], [100, 100]]
+        wp_t2_mid = [[700, 700], [500, 500], [300, 300], [100, 100]]
+        wp_t2_bot = [[900, 500], [900, 100], [400, 100], [100, 100]]
 
-            # 1. Trích xuất attributes hiển thị cơ bản
-            attributes = {
-                "name_display": obj_data.get("name", ""),
-                "size": obj_data.get("size", [40, 40]),
-                "color": obj_data.get("color", "WHITE"),
-            }
+        spawner_idx_t1 = 0
+        spawner_idx_t2 = 0
+        wps_t1 = [wp_t1_top, wp_t1_mid, wp_t1_bot]
+        wps_t2 = [wp_t2_top, wp_t2_mid, wp_t2_bot]
 
-            # Nạp thêm các thuộc tính riêng biệt (HP, target, stats...)
-            if "attributes" in obj_data:
-                attributes.update(obj_data["attributes"])
+        nature_props = [
+            "res://assets/environments/tree_1.glb",
+            "res://assets/environments/tree_2.glb",
+            "res://assets/environments/tree_3.glb",
+            "res://assets/environments/tree_4.glb",
+            "res://assets/environments/tree_5.glb",
+            "res://assets/environments/tree_6.glb",
+            "res://assets/environments/tree_7.glb",
+            "res://assets/environments/tree_8.glb",
+            "res://assets/environments/tree_9.glb",
+            "res://assets/environments/tree_10.glb",
+            "res://assets/environments/rock.glb",
+        ]
 
-            # 2. Xử lý các cờ phân loại logic hệ thống
-            if obj_type == "shop":
-                attributes["is_shop"] = True
-            elif obj_type == "nexus":
-                attributes["is_nexus"] = True
+        # Xử lý từng layer một
+        for layer_name, ascii_lines in layers.items():
+            for row_idx, row_str in enumerate(ascii_lines):
+                for col_idx, char in enumerate(row_str):
+                    if char == " ":
+                        continue
 
-            # Khởi tạo GameObject
-            g_obj = GameObject(team=team, attributes=attributes)
-            g_obj.coord = obj_data.get("coord", [0.0, 0.0])
+                    x = col_idx * CELL_SIZE + (CELL_SIZE / 2)
+                    y = row_idx * CELL_SIZE + (CELL_SIZE / 2)
+                    obj_data = None
 
-            # 3. Gắn Logic Terrain thông minh
-            callback_code = None
-            if obj_type in TERRAIN_CALLBACKS:
-                callback_code = TERRAIN_CALLBACKS[obj_type]
-            elif "custom_logic" in obj_data:
-                callback_code = obj_data["custom_logic"]
+                    if char == "X" and layer_name == "boundary":
+                        # Tường viền cứng
+                        obj_data = {
+                            "type": "wall",
+                            "team": 3,
+                            "coord": [x, y],
+                            "size": [CELL_SIZE, CELL_SIZE],
+                            "color": "DARK_GRAY",
+                            "attributes": {
+                                "indestructible": True,
+                                "model_url": random.choice(nature_props),
+                            },
+                        }
+                    elif char == "W" and layer_name == "wall":
+                        # Rừng nội bộ (có thể phá)
+                        obj_data = {
+                            "type": "wall",
+                            "team": 3,
+                            "coord": [x, y],
+                            "size": [CELL_SIZE, CELL_SIZE],
+                            "color": "GRAY",
+                            "attributes": {
+                                "hp": 500,
+                                "model_url": random.choice(nature_props),
+                            },
+                        }
+                    elif char == "~" and layer_name == "river":
+                        obj_data = {
+                            "type": "river",
+                            "team": 3,
+                            "coord": [x, y],
+                            "size": [CELL_SIZE, CELL_SIZE],
+                            "color": "AQUA",
+                            "attributes": {"vfx_type": "river"},
+                        }
+                    elif char == "B" and layer_name == "bush":
+                        obj_data = {
+                            "type": "bush",
+                            "team": 3,
+                            "coord": [x, y],
+                            "size": [CELL_SIZE, CELL_SIZE],
+                            "color": "DARK_GREEN",
+                            "attributes": {"vfx_type": "bush"},
+                        }
+                    elif char == "M" and layer_name == "structures":
+                        obj_data = {
+                            "type": "shop",
+                            "team": 3,
+                            "coord": [x, y],
+                            "size": [60, 60],
+                            "name": "Cửa Hàng",
+                            "color": "YELLOW",
+                            "attributes": {
+                                "is_shop": True,
+                                "stock": [
+                                    {
+                                        "id": "item_1",
+                                        "name": "Giày Chạy Phóng",
+                                        "price": 300,
+                                        "drop": False,
+                                        "type": "passive",
+                                        "stats": {"speed_mult": 1.5},
+                                    }
+                                ],
+                            },
+                        }
+                    elif char == "S" and layer_name == "structures":
+                        team = 1 if row_idx < len(ascii_lines) / 2 else 2
+                        wp_list = (
+                            wps_t1[spawner_idx_t1 % 3]
+                            if team == 1
+                            else wps_t2[spawner_idx_t2 % 3]
+                        )
+                        if team == 1:
+                            spawner_idx_t1 += 1
+                        else:
+                            spawner_idx_t2 += 1
 
-            if callback_code:
-                g_obj.callback_func = compile_callback(callback_code)
+                        obj_data = {
+                            "type": "spawner",
+                            "team": team,
+                            "coord": [x, y],
+                            "size": [40, 40],
+                            "attributes": {"waypoints": wp_list, "spawn_rate": 15.0},
+                        }
 
-            # Nạp vào State
-            game_state.add_object(g_obj)
+                    if obj_data:
+                        attributes = {
+                            "name_display": obj_data.get("name", ""),
+                            "size": obj_data.get("size", [CELL_SIZE, CELL_SIZE]),
+                            "color": obj_data.get("color", "WHITE"),
+                        }
+                        if "attributes" in obj_data:
+                            attributes.update(obj_data["attributes"])
+
+                        g_obj = GameObject(
+                            team=obj_data.get("team", 3), attributes=attributes
+                        )
+                        g_obj.coord = obj_data["coord"]
+
+                        callback_code = TERRAIN_CALLBACKS.get(obj_data["type"], None)
+                        if callback_code:
+                            g_obj.callback_func = compile_callback(callback_code)
+
+                        game_state.add_object(g_obj)
