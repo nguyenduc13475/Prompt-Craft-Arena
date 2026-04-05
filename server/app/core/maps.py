@@ -1,3 +1,4 @@
+# Mã thay thế:
 import os
 import random
 
@@ -12,53 +13,250 @@ from PIL import Image
 CONFIG_3LANE = {
     "displacement": None,
     "ground": "environments/grounds/ground_1.jpg",
-    "water": [  # Dữ liệu Curve: [X, Y, Độ rộng sông] - ĐÃ TĂNG MẠNH ĐỘ RỘNG
+    "water": [  # Dòng sông vắt chéo từ Top-Left xuống Bottom-Right
         (0.0, 0.0, 80.0),
         (300.0, 300.0, 90.0),
-        (500.0, 500.0, 130.0),  # Giữa sông phình to hoành tráng để đấm nhau
+        (500.0, 500.0, 140.0),  # Phình to ở Mid để giao tranh
         (700.0, 700.0, 90.0),
         (1000.0, 1000.0, 80.0),
     ],
     "swamp": None,
     "tree": [
-        (250, 750, 0.5, "res://assets/environments/tree/tree_1.glb", True),
-        (750, 250, 1.2, "res://assets/environments/tree/tree_2.glb", True),
+        # Thêm ngẫu nhiên hàng trăm cây vào các khu vực Rừng (Jungle) để tạo sương mù và chướng ngại vật
+    ]
+    + [
+        (
+            x,
+            y,
+            random.uniform(0, 6.28),
+            f"res://assets/environments/tree/tree_{random.randint(1, 4)}.glb",
+            True,
+        )
+        for x in range(150, 450, 80)
+        for y in range(550, 850, 80)
+        if abs(x - y) > 150
+    ]
+    + [
+        (
+            x,
+            y,
+            random.uniform(0, 6.28),
+            f"res://assets/environments/tree/tree_{random.randint(5, 8)}.glb",
+            True,
+        )
+        for x in range(550, 850, 80)
+        for y in range(150, 450, 80)
+        if abs(x - y) > 150
     ],
     "rock": [
-        (500, 500, 0.0, "res://assets/environments/rock/rock_1.glb", True),
+        # Vài mỏm đá rải rác
+        (400, 600, 0.0, "res://assets/environments/rock/rock_1.glb", True),
+        (600, 400, 1.5, "res://assets/environments/rock/rock_2.glb", True),
     ],
-    "wall": [],
-    "cliff": [
-        (450, 550, 0.0, "res://assets/environments/cliff/cliff_1.glb", False),
-    ],
+    "wall": [
+        # --- TƯỜNG BAO QUANH BẢN ĐỒ (OUTER WALLS) ---
+    ]
+    + [
+        (x, 20, 0.0, "res://assets/environments/wall/wall_1.glb", False)
+        for x in range(20, 1000, 50)
+    ]
+    + [
+        (x, 980, 0.0, "res://assets/environments/wall/wall_1.glb", False)
+        for x in range(20, 1000, 50)
+    ]
+    + [
+        (20, y, 1.57, "res://assets/environments/wall/wall_1.glb", False)
+        for y in range(20, 1000, 50)
+    ]
+    + [
+        (980, y, 1.57, "res://assets/environments/wall/wall_1.glb", False)
+        for y in range(20, 1000, 50)
+    ]
+    # --- TƯỜNG BẢO VỆ BASE TEAM 1 (Bottom-Left) ---
+    + [
+        (x, 700, 0.0, "res://assets/environments/wall/wall_2.glb", False)
+        for x in range(20, 350, 50)
+        if x not in [70, 120, 270, 320]
+    ]  # Cổng Top và Mid
+    + [
+        (300, y, 1.57, "res://assets/environments/wall/wall_2.glb", False)
+        for y in range(700, 1000, 50)
+        if y not in [700, 750, 850, 900]
+    ]  # Cổng Mid và Bot
+    # --- TƯỜNG BẢO VỆ BASE TEAM 2 (Top-Right) ---
+    + [
+        (x, 300, 0.0, "res://assets/environments/wall/wall_2.glb", False)
+        for x in range(700, 1000, 50)
+        if x not in [700, 750, 850, 900]
+    ]  # Cổng Mid và Bot
+    + [
+        (700, y, 1.57, "res://assets/environments/wall/wall_2.glb", False)
+        for y in range(20, 350, 50)
+        if y not in [70, 120, 270, 320]
+    ],  # Cổng Top và Mid
+    "cliff": [],
     "bush": [
-        (350, 650, 80, 80, 0.0, False),
-        (650, 350, 80, 80, 0.0, False),
+        # (x, y, w, h, rotation, destructivity)
+        # Bụi cỏ ven sông (Gank Mid)
+        (400, 450, 80, 60, 0.0, False),
+        (600, 550, 80, 60, 0.0, False),
+        # Bụi cỏ Rừng
+        (250, 650, 100, 60, -0.5, False),
+        (750, 350, 100, 60, -0.5, False),
+        # Bụi cỏ rình rập ở 2 rãnh Top/Bot
+        (100, 500, 40, 120, 0.0, False),
+        (900, 500, 40, 120, 0.0, False),
     ],
     "structure": [
-        [  # Team 1 (Góc Trái Dưới / Bottom-Left) - Tọa độ X nhỏ, Y lớn (Godot Z lớn)
-            (100, 900, 0, "res://assets/environments/nexus/nexus_1.glb", True),
+        [  # ================== TEAM 1 (Góc Trái Dưới) ==================
             (
-                150,
-                850,
-                0,
+                100,
+                900,
+                0.78,
+                "res://assets/environments/nexus/nexus_1.glb",
+                True,
+            ),  # Nhà Chính
+            (
+                50,
+                950,
+                0.78,
+                "res://assets/environments/shop/magic/shop_magic_1.glb",
+                False,
+            ),  # Cửa Hàng
+            # Nhà Lính (Spawners)
+            (100, 750, 0.0, "res://assets/environments/nexus/nexus_2.glb", True),  # Top
+            (
+                200,
+                800,
+                0.78,
                 "res://assets/environments/nexus/nexus_2.glb",
                 True,
-            ),  # Spawner
-            (300, 700, 0, "res://assets/environments/tower/tower_1.glb", True),
-            (50, 950, 0, "res://assets/environments/shop/magic/shop_magic_1.glb", True),
+            ),  # Mid
+            (
+                250,
+                900,
+                1.57,
+                "res://assets/environments/nexus/nexus_2.glb",
+                True,
+            ),  # Bot
+            # Trụ (Towers)
+            (
+                100,
+                500,
+                0.0,
+                "res://assets/environments/tower/tower_1.glb",
+                True,
+            ),  # Top Tier 1
+            (
+                100,
+                200,
+                0.0,
+                "res://assets/environments/tower/tower_2.glb",
+                True,
+            ),  # Top Tier 2
+            (
+                350,
+                650,
+                0.78,
+                "res://assets/environments/tower/tower_1.glb",
+                True,
+            ),  # Mid Tier 1
+            (
+                450,
+                550,
+                0.78,
+                "res://assets/environments/tower/tower_2.glb",
+                True,
+            ),  # Mid Tier 2
+            (
+                500,
+                900,
+                0.0,
+                "res://assets/environments/tower/tower_1.glb",
+                True,
+            ),  # Bot Tier 1
+            (
+                800,
+                900,
+                0.0,
+                "res://assets/environments/tower/tower_2.glb",
+                True,
+            ),  # Bot Tier 2
         ],
-        [  # Team 2 (Góc Phải Trên / Top-Right) - Tọa độ X lớn, Y nhỏ (Godot Z nhỏ)
-            (900, 100, 0, "res://assets/environments/nexus/nexus_1.glb", True),
+        [  # ================== TEAM 2 (Góc Phải Trên) ==================
             (
-                850,
-                150,
-                0,
+                900,
+                100,
+                0.78,
+                "res://assets/environments/nexus/nexus_1.glb",
+                True,
+            ),  # Nhà Chính
+            (
+                950,
+                50,
+                0.78,
+                "res://assets/environments/shop/magic/shop_magic_1.glb",
+                False,
+            ),  # Cửa Hàng
+            # Nhà Lính (Spawners)
+            (900, 250, 0.0, "res://assets/environments/nexus/nexus_2.glb", True),  # Bot
+            (
+                800,
+                200,
+                0.78,
                 "res://assets/environments/nexus/nexus_2.glb",
                 True,
-            ),  # Spawner
-            (700, 300, 0, "res://assets/environments/tower/tower_1.glb", True),
-            (950, 50, 0, "res://assets/environments/shop/magic/shop_magic_1.glb", True),
+            ),  # Mid
+            (
+                750,
+                100,
+                1.57,
+                "res://assets/environments/nexus/nexus_2.glb",
+                True,
+            ),  # Top
+            # Trụ (Towers)
+            (
+                200,
+                100,
+                0.0,
+                "res://assets/environments/tower/tower_2.glb",
+                True,
+            ),  # Top Tier 2
+            (
+                500,
+                100,
+                0.0,
+                "res://assets/environments/tower/tower_1.glb",
+                True,
+            ),  # Top Tier 1
+            (
+                650,
+                350,
+                0.78,
+                "res://assets/environments/tower/tower_2.glb",
+                True,
+            ),  # Mid Tier 2
+            (
+                550,
+                450,
+                0.78,
+                "res://assets/environments/tower/tower_1.glb",
+                True,
+            ),  # Mid Tier 1
+            (
+                900,
+                500,
+                0.0,
+                "res://assets/environments/tower/tower_1.glb",
+                True,
+            ),  # Bot Tier 1
+            (
+                900,
+                800,
+                0.0,
+                "res://assets/environments/tower/tower_2.glb",
+                True,
+            ),  # Bot Tier 2
         ],
     ],
 }
@@ -76,7 +274,6 @@ def init_3lane_callback(config: dict) -> list:
     def process_mask(mask_path, obj_type, color, vfx, callback_code):
         if not mask_path:
             return
-        # Fix: Khớp đường dẫn vật lý trên server để đọc Mask bằng PIL
         physical_path = (
             f"app/static/{mask_path}" if not mask_path.startswith("app/") else mask_path
         )
@@ -123,7 +320,7 @@ def init_3lane_callback(config: dict) -> list:
                 "color": "AQUA",
                 "vfx_type": "river_bezier",
                 "indestructible": True,
-                "river_points": river_points,  # Chuyển payload này cho Client
+                "river_points": river_points,
             },
         )
         g_obj.coord = [500.0, 500.0]
@@ -175,7 +372,7 @@ def init_3lane_callback(config: dict) -> list:
             g_obj.callback_func = compile_callback(cb)
         objects.append(g_obj)
 
-    # 2.4 Cấu trúc (Trụ, Nhà chính...)
+    # 2.4 Cấu trúc (Trụ, Nhà chính, Quái rừng)
     for team_idx, team_structs in enumerate(config.get("structure", [])):
         team_id = team_idx + 1
         for item in team_structs:
@@ -190,8 +387,27 @@ def init_3lane_callback(config: dict) -> list:
                 )
                 if "nexus_2" in url:
                     obj_type, size = "spawner", [40, 40]
-                    extra_attrs.update({"spawn_rate": 15.0, "waypoints": []})
+
+                    # --- AI WAYPOINTS THÔNG MINH CHO LÍNH ---
+                    waypoints = []
+                    if team_id == 1:
+                        if x < 150:
+                            waypoints = [[100, 100], [900, 100]]  # Đi Top
+                        elif y > 850:
+                            waypoints = [[900, 900], [900, 100]]  # Đi Bot
+                        else:
+                            waypoints = [[500, 500], [900, 100]]  # Đi Mid
+                    elif team_id == 2:
+                        if y < 150:
+                            waypoints = [[100, 100], [100, 900]]  # Đi Top
+                        elif x > 850:
+                            waypoints = [[900, 900], [100, 900]]  # Đi Bot
+                        else:
+                            waypoints = [[500, 500], [100, 900]]  # Đi Mid
+
+                    extra_attrs.update({"spawn_rate": 15.0, "waypoints": waypoints})
                     cb_code = TERRAIN_CALLBACKS.get("spawner")
+
             elif "tower" in url:
                 obj_type, size, cb_code = (
                     "tower",
@@ -235,13 +451,61 @@ def init_3lane_callback(config: dict) -> list:
                 g_obj.callback_func = compile_callback(cb_code)
             objects.append(g_obj)
 
+    # 2.5 Tự động Spawn Quái Rừng bằng Logic Callback (Không phụ thuộc config tĩnh)
+    monster_spawns = [
+        (
+            250,
+            250,
+            0.0,
+            "res://assets/environments/monster/tauren/monster_tauren_1.glb",
+        ),
+        (750, 750, 0.0, "res://assets/environments/monster/cat/monster_cat_1.glb"),
+    ]
+
+    monster_ai_code = """
+def execute(event):
+    if getattr(event.self, 'hp', 0) <= 0:
+        event.self.is_deleted = True
+        # Ghi chú: Có thể thêm logic tạo object Spawner tàng hình ở đây để 60s sau hồi sinh lại bãi quái
+        return
+    if not hasattr(event.self, 'last_attack'): event.self.last_attack = 0
+    if event.current_time > event.self.last_attack + 1.5:
+        enemies = get_objects(event.self.coord, 70.0)
+        for e in enemies:
+            if getattr(e, 'hp', None) is not None and e.id != event.self.id and e.team != event.self.team:
+                e.hp = e.hp - getattr(event.self, 'attack_damage', 60)
+                event.self.last_attack = event.current_time
+                event.self.current_anim = 'Attack'
+                break
+"""
+    for x, y, rot, url in monster_spawns:
+        m_obj = GameObject(
+            team=3,  # Team 3 là Neutral (Quái rừng)
+            attributes={
+                "type": "monster",
+                "size": [45, 45],
+                "model_url": url,
+                "hp": 1500,
+                "max_hp": 1500,
+                "attack_damage": 60,
+                "bounty": 150,
+                "exp_reward": 200,
+                "indestructible": False,
+                "name_display": "MONSTER",
+            },
+        )
+        m_obj.coord = [x, y]
+        m_obj.orientation = rot
+        m_obj.callback_func = compile_callback(monster_ai_code)
+        objects.append(m_obj)
+
     return objects
 
 
 # ==========================================
 # 3. CẤU HÌNH & CALLBACK MAP ARAM (Dự phòng)
 # ==========================================
-CONFIG_ARAM = {}  # TODO sau
+CONFIG_ARAM = {}
 
 
 def init_aram_callback(config: dict) -> list:
@@ -249,7 +513,7 @@ def init_aram_callback(config: dict) -> list:
 
 
 # ==========================================
-# HỆ THỐNG REGISTRY CHO MAP (List of Tuples / Dict)
+# HỆ THỐNG REGISTRY CHO MAP
 # ==========================================
 MAP_REGISTRY = {
     "3lane": (CONFIG_3LANE, init_3lane_callback),
@@ -261,13 +525,7 @@ MAP_REGISTRY = {
 # 4. HÀM MAIN ĐỂ GAME_LOOP GỌI
 # ==========================================
 def load_map(game_state, map_type: str):
-    """
-    Hàm này giờ chỉ đóng vai trò phân phối (Router).
-    Gặp map nào -> Lấy Config + Callback tương ứng -> Nạp vào GameState.
-    """
     if map_type == "random":
-        # Tự động lấy danh sách tất cả các map đang có trong Registry để random
-        # Đéo bao giờ sợ phải sửa lại đoạn này khi thêm map thứ 100 hay 1000
         available_maps = list(MAP_REGISTRY.keys())
         map_type = random.choice(available_maps)
 
@@ -276,10 +534,7 @@ def load_map(game_state, map_type: str):
         map_type = "3lane"
 
     config, init_callback = MAP_REGISTRY[map_type]
-
-    # 1. GỌI CALLBACK ĐỂ LẤY MẢNG OBJECTS DỰA TRÊN CONFIG ĐÓ
     map_objects = init_callback(config)
 
-    # 2. ĐẨY VÀO GAME STATE
     for obj in map_objects:
         game_state.add_object(obj)

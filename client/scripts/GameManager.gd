@@ -20,6 +20,11 @@ var _latest_server_data = {}  # Truy cập bằng UI
 var _is_night_state: bool = false
 var _light_tween: Tween
 
+# --- CAMERA BIẾN TOÀN CỤC ---
+var _locked_cam_offset: Vector3 = Vector3.ZERO
+var _unlocked_cam_pos: Vector3 = Vector3(500, 0, 500)
+var _is_first_camera_snap: bool = true
+
 
 func _ready():
 	http_request = HTTPRequest.new()
@@ -42,18 +47,17 @@ func _process(delta):
 			if orb_container and orb_container.get_child_count() > 0:
 				orb_container.rotation.y -= 4.0 * delta  # Xoay ngược chiều kim đồng hồ
 
-	if is_camera_locked:
-		return
-
 	var current_scene = get_tree().current_scene
 	if not current_scene or current_scene.name != "Main":
 		return
 	var cam = current_scene.get_node_or_null("Camera3D")
 	if not cam:
 		return
+
 	var mouse_pos = get_viewport().get_mouse_position()
 	var viewport_size = get_viewport().get_visible_rect().size
 	var move_vec = Vector3.ZERO
+
 	if mouse_pos.x < pan_margin:
 		move_vec.x -= 1
 	elif mouse_pos.x > viewport_size.x - pan_margin:
@@ -62,9 +66,65 @@ func _process(delta):
 		move_vec.z -= 1
 	elif mouse_pos.y > viewport_size.y - pan_margin:
 		move_vec.z += 1
+
 	if move_vec != Vector3.ZERO:
 		move_vec = move_vec.normalized()
-		cam.position += move_vec * pan_speed * delta * camera_zoom
+
+	# Tìm Hero của bản thân
+	var my_hero_node = null
+	if _latest_server_data:
+		for id in _latest_server_data:
+			if _latest_server_data[id].get("client_id") == str(AuthManager.user_id):
+				my_hero_node = objects_in_scene.get(id)
+				break
+
+	# Cấu hình góc nhìn chuẩn MOBA
+	var height = 250.0 * camera_zoom
+	var backward_dist = 200.0 * camera_zoom
+	var zoom_offset = Vector3(0, height, backward_dist)
+	cam.fov = 40.0
+	cam.rotation_degrees = Vector3(-50, 0, 0)
+
+	# Nhấn Space để lập tức kéo Camera về giữa Hero (Giống LOL/HotS)
+	if Input.is_key_pressed(KEY_SPACE):
+		_locked_cam_offset = Vector3.ZERO
+		if is_instance_valid(my_hero_node):
+			_unlocked_cam_pos = my_hero_node.position
+
+	# LOGIC CAMERA SOFT-LOCK (HotS Style)
+	if is_camera_locked and is_instance_valid(my_hero_node):
+		if move_vec != Vector3.ZERO:
+			# Dịch chuyển offset khi chuột ở mép
+			_locked_cam_offset += move_vec * pan_speed * delta * 0.4 * camera_zoom
+			var max_offset = 350.0 * camera_zoom  # Tối đa lùi ra xa được bao nhiêu
+			if _locked_cam_offset.length() > max_offset:
+				_locked_cam_offset = _locked_cam_offset.normalized() * max_offset
+		else:
+			# Chuột rời mép, camera tự trôi mượt về Hero
+			_locked_cam_offset = _locked_cam_offset.lerp(Vector3.ZERO, delta * 3.5)
+
+		var target_look_pos = my_hero_node.position + _locked_cam_offset
+		var cam_target_pos = target_look_pos + zoom_offset
+
+		if _is_first_camera_snap or cam.position.distance_to(cam_target_pos) > 500:
+			cam.position = cam_target_pos
+			_is_first_camera_snap = false
+		else:
+			cam.position = cam.position.lerp(cam_target_pos, 10.0 * delta)
+
+		# Đồng bộ vị trí cho Unlocked mode
+		_unlocked_cam_pos = my_hero_node.position + _locked_cam_offset
+
+	# LOGIC CAMERA UNLOCKED (Trôi tự do)
+	elif not is_camera_locked:
+		_unlocked_cam_pos += move_vec * pan_speed * delta * camera_zoom
+		var cam_target_pos = _unlocked_cam_pos + zoom_offset
+
+		if _is_first_camera_snap:
+			cam.position = cam_target_pos
+			_is_first_camera_snap = false
+		else:
+			cam.position = cam.position.lerp(cam_target_pos, 15.0 * delta)
 
 
 # --- THUẬT TOÁN AUTO-SCALE CHUẨN MOBA CỦA ANH ĐỨC ---
@@ -330,20 +390,6 @@ func update_objects(server_objects: Dictionary, is_night: bool = false):
 									_load_gltf_model(url, pivot, pivot, safe_orb_id, {})
 
 				if data.get("client_id") == str(AuthManager.user_id):
-					var cam = get_tree().current_scene.get_node_or_null("Camera3D")
-					if cam and is_camera_locked:
-						cam.fov = 40.0
-						cam.rotation_degrees = Vector3(-50, 0, 0)
-						var height = 250.0 * camera_zoom
-						var backward_dist = 200.0 * camera_zoom
-						var zoom_offset = Vector3(0, height, backward_dist)
-
-						var cam_target_pos = target_pos_3d + zoom_offset
-						if cam.position.distance_to(cam_target_pos) > 200:
-							cam.position = cam_target_pos
-						else:
-							cam.position = cam.position.lerp(cam_target_pos, 0.2)
-
 					var hp_node = node.get_node_or_null("HPBar")
 					if hp_node and hp_node is Label3D:
 						var c_hp = data.get("hp", 100)
