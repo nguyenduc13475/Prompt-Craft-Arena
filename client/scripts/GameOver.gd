@@ -50,9 +50,15 @@ func _ready():
 	vbox.add_child(spacer2)
 
 	var btn_back = Button.new()
-	btn_back.text = "QUAY LẠI SẢNH"
+	btn_back.text = "QUAY LẠI SẢNH CHÍNH"
 	btn_back.custom_minimum_size = Vector2(0, 60)
+	# Thêm hiệu ứng màu cho nút nổi bật
+	btn_back.modulate = Color(0.2, 1.0, 0.2)
 	btn_back.pressed.connect(
-		func(): get_tree().change_scene_to_file("res://scenes/HeroManager.tscn")
+		func():
+			# Giải phóng hoàn toàn rác trước khi quay về sảnh
+			GameManager.clear_all_objects()
+			Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+			get_tree().change_scene_to_file("res://scenes/HeroManager.tscn")
 	)
 	vbox.add_child(btn_back)

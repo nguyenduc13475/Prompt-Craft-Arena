@@ -477,11 +477,13 @@ func _create_new_object(obj_id: String, data: Dictionary, start_pos: Vector2):
 		elif vfx_type == "river_bezier":
 			var water_mesh = MeshInstance3D.new()
 			var plane = PlaneMesh.new()
-			plane.size = Vector2(1000.0, 1000.0)  # Phủ toàn map, cắt gọt bằng SDF trong Shader
-			plane.subdivide_width = 30
-			plane.subdivide_depth = 30
+			plane.size = Vector2(1000.0, 1000.0)
+			# Bơm vertex gấp 8 lần để sóng gợn mượt mà, không bị vuông vức lởm chởm
+			plane.subdivide_width = 250
+			plane.subdivide_depth = 250
 			water_mesh.mesh = plane
-			water_mesh.position.y = 1.0
+			# Hạ xuống xíu để vừa chạm sát mặt đất, kết hợp shader ép phẳng vùng ven bờ
+			water_mesh.position.y = 0.5
 
 			var mat = ShaderMaterial.new()
 			mat.shader = load("res://assets/water_animated.gdshader")
