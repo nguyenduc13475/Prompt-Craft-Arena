@@ -11,7 +11,7 @@ from PIL import Image
 # ==========================================
 CONFIG_3LANE = {
     "displacement": None,
-    "ground": "environments/grounds/ground_1.png",
+    "ground": "environments/grounds/ground_1.jpg",
     "water": "environments/masks/mask_1.png",
     "swamp": None,
     "tree": [
