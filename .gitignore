@@ -10,8 +10,6 @@ client/assets/environments/**/*.webp
 *.gdshader.uid
 *.gd.uid
 *.import
-client/assets/default_heroes/**/*_Image_*
-client/assets/default_heroes/**/*_texture*
 
 # --- Python ---
 __pycache__/
