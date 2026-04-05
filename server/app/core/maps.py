@@ -12,12 +12,12 @@ from PIL import Image
 CONFIG_3LANE = {
     "displacement": None,
     "ground": "environments/grounds/ground_1.jpg",
-    "water": [  # Dữ liệu Curve: [X, Y, Độ rộng sông]
-        (100.0, 100.0, 50.0),
-        (300.0, 300.0, 55.0),
-        (500.0, 500.0, 70.0),  # Giữa sông phình to
-        (700.0, 700.0, 55.0),
-        (900.0, 900.0, 50.0),
+    "water": [  # Dữ liệu Curve: [X, Y, Độ rộng sông] - ĐÃ TĂNG MẠNH ĐỘ RỘNG
+        (0.0, 0.0, 80.0),
+        (300.0, 300.0, 90.0),
+        (500.0, 500.0, 130.0),  # Giữa sông phình to hoành tráng để đấm nhau
+        (700.0, 700.0, 90.0),
+        (1000.0, 1000.0, 80.0),
     ],
     "swamp": None,
     "tree": [

@@ -288,7 +288,8 @@ func update_objects(server_objects: Dictionary, is_night: bool = false):
 				var target_pos_3d = Vector3(server_pos.x, 0, server_pos.y)
 				node.position = node.position.lerp(target_pos_3d, 0.4)
 
-				if data.has("orientation"):
+				# Không bẻ cổ Node Sông vì Mesh của nó đã được render ôm sát theo tọa độ World chuẩn
+				if data.has("orientation") and data.get("vfx_type") != "river_bezier":
 					node.rotation.y = lerp_angle(
 						node.rotation.y, -data["orientation"] + (PI / 2.0), 0.2
 					)
@@ -451,53 +452,114 @@ func _create_new_object(obj_id: String, data: Dictionary, start_pos: Vector2):
 			_load_gltf_model(model_url, visual_node, new_node, obj_id, data)
 	elif vfx_url != "" or vfx_type != "none":
 		if vfx_type == "bush":
-			# ĐẶC TRỊ BỤI CỎ: Không dùng Model, dùng procedural plane + grass shader
-			var grass_mesh = MeshInstance3D.new()
-			var plane = PlaneMesh.new()
-			plane.subdivide_width = 10
-			plane.subdivide_depth = 10
-			plane.size = Vector2(obj_size.x, obj_size.z)
-			grass_mesh.mesh = plane
-			grass_mesh.position.y = 2.0
+			# BỤI CỎ ĐÍCH THỰC (MULTIMESH PROCEDURAL GRASS BLADES)
+			var multi_mesh = MultiMesh.new()
+			multi_mesh.transform_format = MultiMesh.TRANSFORM_3D
+			multi_mesh.instance_count = int(obj_size.x * obj_size.z / 10.0)  # Mật độ dày đặc
+
+			# Code cứng 1 cọng cỏ (1 tam giác vuốt nhọn lên cao)
+			var st = SurfaceTool.new()
+			st.begin(Mesh.PRIMITIVE_TRIANGLES)
+			st.set_uv(Vector2(0, 1))
+			st.add_vertex(Vector3(-1.5, 0, 0))
+			st.set_uv(Vector2(1, 1))
+			st.add_vertex(Vector3(1.5, 0, 0))
+			st.set_uv(Vector2(0.5, 0))
+			st.add_vertex(Vector3(0, 15.0, 0))  # Ngọn cỏ cao 15 đơn vị
+			st.generate_normals()
+			multi_mesh.mesh = st.commit()
+
+			# Scatter ngẫu nhiên hàng ngàn cọng cỏ trong Bounding Box
+			var rng = RandomNumberGenerator.new()
+			rng.seed = obj_id.hash()
+			for i in range(multi_mesh.instance_count):
+				var pos = Vector3(
+					rng.randf_range(-obj_size.x / 2, obj_size.x / 2),
+					0,
+					rng.randf_range(-obj_size.z / 2, obj_size.z / 2)
+				)
+				var basis = Basis().rotated(Vector3.UP, rng.randf_range(0, PI * 2))
+				multi_mesh.set_instance_transform(i, Transform3D(basis, pos))
+
+			var mm_inst = MultiMeshInstance3D.new()
+			mm_inst.multimesh = multi_mesh
+			mm_inst.position.y = 0.5  # Nâng lên 1 chút cho khỏi cấn mặt đất
 
 			var grass_mat = ShaderMaterial.new()
 			grass_mat.shader = load("res://assets/grass_wind.gdshader")
-			grass_mat.set_shader_parameter("color_top", Color(0.1, 0.5, 0.1, 1.0))
-			grass_mat.set_shader_parameter("color_bottom", Color(0.02, 0.15, 0.05, 1.0))
+			grass_mat.set_shader_parameter("color_top", Color(0.2, 0.6, 0.2, 1.0))
+			grass_mat.set_shader_parameter("color_bottom", Color(0.05, 0.25, 0.1, 1.0))
 			grass_mat.set_shader_parameter("wind_speed", 2.0)
+			mm_inst.material_override = grass_mat
+			visual_node.add_child(mm_inst)
 
-			grass_mesh.material_override = grass_mat
-			visual_node.add_child(grass_mesh)
-
-			# SÔNG, SUỐI: Phải nằm phẳng và xài shader nước
-
-			# ĐẦM LẦY (SWAMP): Nằm phẳng màu xỉn
-
-			# CHỈ CHIÊU THỨC KỸ NĂNG: Mới xài Billboard và QuadMesh đứng dựng lên
 		elif vfx_type == "river_bezier":
-			var water_mesh = MeshInstance3D.new()
-			var plane = PlaneMesh.new()
-			plane.size = Vector2(1000.0, 1000.0)
-			# Bơm vertex gấp 8 lần để sóng gợn mượt mà, không bị vuông vức lởm chởm
-			plane.subdivide_width = 250
-			plane.subdivide_depth = 250
-			water_mesh.mesh = plane
-			# Hạ xuống xíu để vừa chạm sát mặt đất, kết hợp shader ép phẳng vùng ven bờ
-			water_mesh.position.y = 0.5
+			# THUẬT TOÁN RIBBON MESH CHO SÔNG (Tối ưu 99% Vertex)
+			var st = SurfaceTool.new()
+			st.begin(Mesh.PRIMITIVE_TRIANGLES)
 
-			var mat = ShaderMaterial.new()
-			mat.shader = load("res://assets/water_animated.gdshader")
-
-			# Parse mảng điểm từ Server truyền xuống Shader
 			var pts = data.get("river_points", [])
-			var arr = []
-			for p in pts:
-				arr.append(Plane(p[0], p[1], p[2], 0.0))  # Godot Shader nhận mảng Plane như vec4
-			mat.set_shader_parameter("river_points", arr)
-			mat.set_shader_parameter("point_count", pts.size())
+			if pts.size() >= 2:
+				var uv_x = 0.0
+				var segments = 100
 
-			water_mesh.material_override = mat
-			visual_node.add_child(water_mesh)
+				for i in range(pts.size()):
+					var pt = pts[i]
+					var p_pos = Vector2(pt[0], pt[1])
+					var radius = pt[2] + 30.0  # Bơm thêm biên độ dư 30 mét cho sóng đánh tràn bờ
+
+					# Tính Vector hướng dòng chảy (Forward) và Vector bờ (Right)
+					var forward = Vector2()
+					if i < pts.size() - 1:
+						forward = (Vector2(pts[i + 1][0], pts[i + 1][1]) - p_pos).normalized()
+					elif i > 0:
+						forward = (p_pos - Vector2(pts[i - 1][0], pts[i - 1][1])).normalized()
+
+					var right = Vector2(-forward.y, forward.x)  # Vector vuông góc với dòng chảy
+
+					# UV.x trải dài theo khoảng cách địa lý
+					if i > 0:
+						uv_x += p_pos.distance_to(Vector2(pts[i - 1][0], pts[i - 1][1])) / 80.0
+
+					# Quét qua các lát cắt ngang mặt sông
+					for j in range(segments + 1):
+						var t = float(j) / float(segments)  # Tỉ lệ t từ 0.0 (Bờ trái) đến 1.0 (Bờ phải)
+						var offset = right * ((t - 0.5) * 2.0 * radius)
+
+						st.set_uv(Vector2(uv_x, t))
+						# Ghi Normal thẳng đứng để Shader bóp méo chiếu bóng
+						st.set_normal(Vector3.UP)
+						# Truyền Vector Vector Bờ (Right) vào Tangent để Shader biết hướng sóng xô bờ
+						st.set_tangent(Plane(right.x, 0.0, right.y, 1.0))
+
+						# Convert tọa độ map sang local Node (Node gốc được set position từ Server [500,500])
+						var local_pos = Vector3(
+							p_pos.x + offset.x - start_pos.x, 0.0, p_pos.y + offset.y - start_pos.y
+						)
+						st.add_vertex(local_pos)
+
+					# Kết nối các điểm vừa tạo thành Triangle Mesh
+					if i > 0:
+						for j in range(segments):
+							var curr_row = i * (segments + 1)
+							var prev_row = (i - 1) * (segments + 1)
+							# Tam giác 1
+							st.add_index(prev_row + j)
+							st.add_index(curr_row + j)
+							st.add_index(prev_row + j + 1)
+							# Tam giác 2
+							st.add_index(prev_row + j + 1)
+							st.add_index(curr_row + j)
+							st.add_index(curr_row + j + 1)
+
+				var water_mesh = MeshInstance3D.new()
+				water_mesh.mesh = st.commit()
+				water_mesh.position.y = 3  # Nổi nhẹ trên mặt đất
+
+				var mat = ShaderMaterial.new()
+				mat.shader = load("res://assets/water_animated.gdshader")
+				water_mesh.material_override = mat
+				visual_node.add_child(water_mesh)
 
 			# ĐẦM LẦY (SWAMP): Nằm phẳng màu xỉn
 
