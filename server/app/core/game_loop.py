@@ -59,6 +59,8 @@ async def run_game_loop():
                             event_type=input_data.get("type"),
                             coord=input_data.get("coord", obj.coord),
                         )
+                        # Inject thêm cờ space_pressed vào thẳng event object
+                        event.space_pressed = input_data.get("space_pressed", False)
                         # Truyền state trực tiếp cho builtins một lần trước khi gọi callback
                         sandbox_builtins.global_game_state = state
 

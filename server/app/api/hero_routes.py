@@ -1,4 +1,3 @@
-import os
 import re
 import uuid
 from typing import List, Optional
@@ -117,15 +116,13 @@ async def create_and_save_hero(
 
 @router.get("/api/heroes/default_models")
 async def get_default_models():
-    """Quét thư mục default_assets và trả về danh sách các model GLB"""
-    models_dir = "app/static/default_assets"
-    os.makedirs(models_dir, exist_ok=True)
-    files = [f for f in os.listdir(models_dir) if f.endswith(".glb")]
-    result = []
-    for f in files:
-        name = f.replace(".glb", "").replace("_", " ").title()
-        result.append({"name": name, "url": f"/static/default_assets/{f}"})
-    return result
+    """Trỏ thẳng về đường dẫn Local (res://) của Godot Client để khỏi phải lưu file ở Server"""
+    # Bạn có thể khai báo cứng các model có sẵn trong thư mục của Godot tại đây
+    default_models = [
+        {"name": "Mannequin", "url": "res://assets/default_assets/mannequin.glb"},
+        {"name": "Knight", "url": "res://assets/default_assets/knight.glb"},
+    ]
+    return default_models
 
 
 @router.get("/api/heroes", response_model=List[HeroDto])

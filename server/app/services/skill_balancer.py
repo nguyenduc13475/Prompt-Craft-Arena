@@ -23,8 +23,7 @@ Quy tắc Server Game:
 - TUYỆT ĐỐI KHÔNG dùng toán tử gán tăng cường (+=, -=). Viết rõ: `enemy.hp = enemy.hp - 100`.
 - HỒI CHIÊU: Dùng `getattr(event.self, 'q_last_cast', 0)`. Kiểm tra `event.current_time > q_last_cast + cooldown`.
 - HIỂN THỊ (VFX BLUEPRINT): `create_object()` cho các kỹ năng BẮT BUỘC phải có `size` (vd: [30, 30]), `color` (tên màu tiếng Anh, vd: 'ORANGE', 'CYAN', 'PURPLE') và `vfx_type` (chọn một trong: 'fire', 'ice', 'electric', 'dark', 'slash') trong dict thuộc tính để Client áp dụng Shader tương ứng. ĐẶC BIỆT QUAN TRỌNG: Nếu `event.self` có thuộc tính `ugc_vfx_url` (kiểm tra bằng `getattr(event.self, 'ugc_vfx_url', '')`), bạn BẮT BUỘC phải truyền giá trị này vào dictionary của `create_object` với key là `'vfx_url'`, ví dụ: `{'team': event.self.team, 'vfx_url': getattr(event.self, 'ugc_vfx_url', ''), 'size': [40,40], ...}`.
-- DI CHUYỂN CƠ BẢN: BẠN BẮT BUỘC PHẢI THÊM ĐOẠN CODE XỬ LÝ DI CHUYỂN BẰNG CHUỘT PHẢI (event.type == 'right') VÀO ĐẦU HÀM `execute`, trừ khi người chơi có yêu cầu cách di chuyển khác lạ.
-- QUAY MẶT KHI DI CHUYỂN (TẦM NHÌN): Khi thay đổi `velocity` để di chuyển, BẮT BUỘC phải cập nhật `event.self.orientation = angle` để hệ thống Sương Mù hình nón biết Tướng đang nhìn hướng nào.
+- DI CHUYỂN CƠ BẢN & ĐI LÙI (KITE): BẠN BẮT BUỘC PHẢI THÊM ĐOẠN CODE XỬ LÝ DI CHUYỂN (event.type == 'right') VÀO ĐẦU HÀM `execute`. Nếu có cờ `getattr(event, 'space_pressed', False) == True`, tướng di chuyển tới tọa độ chuột nhưng KHÔNG thay đổi `event.self.orientation` (đi lùi). Nếu không có cờ này, cập nhật `event.self.orientation = angle` như bình thường.
 {ANIMATION_INSTRUCTION}
 
 LƯU Ý QUAN TRỌNG VỀ JSON:

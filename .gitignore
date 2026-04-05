@@ -4,6 +4,14 @@ client/export_presets.cfg
 client/**/*.translation
 _engine/
 server/promptcraft.db
+client/assets/environments/**/*.png
+client/assets/environments/**/*.jpg
+client/assets/environments/**/*.webp
+*.gdshader.uid
+*.gd.uid
+*.import
+client/assets/default_heroes/**/*_Image_*
+client/assets/default_heroes/**/*_texture*
 
 # --- Python ---
 __pycache__/

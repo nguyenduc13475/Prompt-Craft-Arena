@@ -10,6 +10,12 @@ var objects_in_scene = {}
 var texture_cache = {}  # Cache ảnh để không tải lại nhiều lần
 var http_request: HTTPRequest
 var camera_zoom: float = 1.0  # Mức độ zoom camera trong trận đấu
+
+# --- CAMERA MOBA CONFIG ---
+var is_camera_locked: bool = true
+var pan_speed: float = 1200.0  # Tốc độ trượt camera
+var pan_margin: float = 20.0  # Khoảng cách chuột cách mép màn hình (pixels)
+
 var _latest_server_data = {}  # Truy cập bằng UI
 var _is_night_state: bool = false
 var _light_tween: Tween
@@ -19,6 +25,199 @@ func _ready():
 	http_request = HTTPRequest.new()
 	add_child(http_request)
 	http_request.request_completed.connect(self._on_hero_generated)
+
+
+func _unhandled_key_input(event):
+	if event.pressed and event.keycode == KEY_Y:
+		is_camera_locked = not is_camera_locked
+		print("Camera Lock: ", is_camera_locked)
+
+
+func _process(delta):
+	# Xoay OrbContainer của các objects có orbs
+	for obj_id in objects_in_scene:
+		var node = objects_in_scene[obj_id]
+		if is_instance_valid(node):
+			var orb_container = node.get_node_or_null("OrbContainer")
+			if orb_container and orb_container.get_child_count() > 0:
+				orb_container.rotation.y -= 4.0 * delta  # Xoay ngược chiều kim đồng hồ
+
+	if is_camera_locked:
+		return
+
+	var current_scene = get_tree().current_scene
+	if not current_scene or current_scene.name != "Main":
+		return
+	var cam = current_scene.get_node_or_null("Camera3D")
+	if not cam:
+		return
+	var mouse_pos = get_viewport().get_mouse_position()
+	var viewport_size = get_viewport().get_visible_rect().size
+	var move_vec = Vector3.ZERO
+	if mouse_pos.x < pan_margin:
+		move_vec.x -= 1
+	elif mouse_pos.x > viewport_size.x - pan_margin:
+		move_vec.x += 1
+	if mouse_pos.y < pan_margin:
+		move_vec.z -= 1
+	elif mouse_pos.y > viewport_size.y - pan_margin:
+		move_vec.z += 1
+	if move_vec != Vector3.ZERO:
+		move_vec = move_vec.normalized()
+		cam.position += move_vec * pan_speed * delta * camera_zoom
+
+
+# --- THUẬT TOÁN AUTO-SCALE CHUẨN MOBA CỦA ANH ĐỨC ---
+func _apply_auto_scale(scene_node: Node3D, obj_id: String, data: Dictionary = {}):
+	var aabb = _get_model_aabb(scene_node)
+	var vertex_count = _get_vertex_count(scene_node)
+
+	# Kích thước gốc của Model (Width lấy trục lớn nhất giữa X và Z, Height là Y)
+	var current_width = max(aabb.size.x, aabb.size.z)
+	var current_height = aabb.size.y
+
+	if current_width < 0.01:
+		current_width = 1.0  # Tránh chia cho 0
+
+	var obj_type = data.get("type", "")
+	var model_url = data.get("model_url", "")
+
+	# Phục hồi logic nhận diện thông minh (thay cho is_nature cũ)
+	# Rất quan trọng để Skill Object không bị phình to như con Tướng!
+	if obj_type == "":
+		if "tree" in model_url:
+			obj_type = "tree"
+		elif "rock" in model_url:
+			obj_type = "rock"
+		elif "wall" in model_url or "cliff" in model_url:
+			obj_type = "wall"
+		elif "tower" in model_url:
+			obj_type = "tower"
+		elif "nexus" in model_url:
+			obj_type = "nexus"
+		elif "shop" in model_url:
+			obj_type = "shop"
+		elif "minion" in model_url:
+			obj_type = "minion"
+		elif obj_id.begins_with("orb_"):
+			obj_type = "orb"
+		elif data.get("client_id", "") != "":
+			obj_type = "hero"
+		else:
+			obj_type = "skill_object"
+
+	var target_width = current_width
+	var target_scale = 1.0
+	var final_scale_vec = Vector3.ONE
+
+	match obj_type:
+		"hero", "monster", "shop_keeper":
+			target_width = clamp(data.get("size", [15])[0], 10.0, 20.0)
+			target_scale = target_width / current_width
+			var expected_height = current_height * target_scale
+			final_scale_vec = Vector3(target_scale, target_scale, target_scale)
+			if expected_height > 60.0:
+				final_scale_vec.y = 60.0 / current_height
+
+		"nexus", "shop":
+			target_width = clamp(data.get("size", [60])[0], 50.0, 70.0)
+			target_scale = target_width / current_width
+			final_scale_vec = Vector3(target_scale, target_scale, target_scale)
+
+		"tower":
+			target_width = clamp(data.get("size", [35])[0], 30.0, 40.0)
+			target_scale = target_width / current_width
+			final_scale_vec = Vector3(target_scale, target_scale, target_scale)
+
+		"tree":
+			target_width = clamp(data.get("size", [15])[0], 10.0, 20.0)
+			target_scale = (
+				(target_width / current_width) * clamp(float(vertex_count) / 5000.0, 0.5, 2.0)
+			)
+			final_scale_vec = Vector3(target_scale, target_scale, target_scale)
+
+		"rock":
+			target_width = clamp(data.get("size", [25])[0], 20.0, 30.0)
+			target_scale = (
+				(target_width / current_width) * clamp(float(vertex_count) / 5000.0, 0.5, 2.0)
+			)
+			final_scale_vec = Vector3(target_scale, target_scale, target_scale)
+
+		"wall", "cliff":
+			target_width = clamp(data.get("size", [45])[0], 40.0, 50.0)
+			target_scale = (
+				(target_width / current_width) * clamp(float(vertex_count) / 5000.0, 0.5, 2.0)
+			)
+			final_scale_vec = Vector3(target_scale, target_scale, target_scale)
+
+		"minion":
+			target_width = clamp(data.get("size", [8])[0], 5.0, 10.0)
+			target_scale = target_width / current_width
+			final_scale_vec = Vector3(target_scale, target_scale, target_scale)
+
+		"orb":
+			target_width = 8.0  # Orb thì nhỏ gọn thôi
+			target_scale = target_width / current_width
+			final_scale_vec = Vector3(target_scale, target_scale, target_scale)
+
+		_:  # Mặc định (Skill object, đạn...)
+			target_width = data.get("size", [10])[0]
+			target_scale = target_width / current_width
+			final_scale_vec = Vector3(target_scale, target_scale, target_scale)
+
+	# --- THÊM NOISE CỐ ĐỊNH DỰA TRÊN OBJ_ID ---
+	var rng = RandomNumberGenerator.new()
+	rng.seed = obj_id.hash()
+
+	# Tạo độ lệch scale từ -15% đến +15%
+	var noise_factor = rng.randf_range(0.85, 1.15)
+
+	# Chặn noise cho các object cần hitbox chuẩn / không phải môi trường
+	if obj_type in ["nexus", "tower", "shop", "hero", "minion", "orb", "skill_object"]:
+		noise_factor = 1.0
+
+	final_scale_vec *= noise_factor
+	scene_node.scale = final_scale_vec
+
+
+func _get_vertex_count(node: Node) -> int:
+	var count = 0
+	if node is MeshInstance3D and node.mesh:
+		for i in range(node.mesh.get_surface_count()):
+			var arrays = node.mesh.surface_get_arrays(i)
+			if arrays.size() > Mesh.ARRAY_VERTEX and arrays[Mesh.ARRAY_VERTEX] != null:
+				count += arrays[Mesh.ARRAY_VERTEX].size()
+	for child in node.get_children():
+		count += _get_vertex_count(child)
+	return count
+
+
+func _get_model_aabb(node: Node) -> AABB:
+	var bounds = AABB()
+	var first = true
+	var meshes = _get_all_mesh_instances(node)
+	for m in meshes:
+		if m.mesh:
+			var mesh_aabb = m.mesh.get_aabb()
+			# Transform AABB theo local transform của mesh con
+			var transformed_aabb = m.transform * mesh_aabb
+			if first:
+				bounds = transformed_aabb
+				first = false
+			else:
+				bounds = bounds.merge(transformed_aabb)
+	if first:  # Không tìm thấy mesh nào, trả về hòm mặc định
+		bounds = AABB(Vector3(-1, -1, -1), Vector3(2, 2, 2))
+	return bounds
+
+
+func _get_all_mesh_instances(node: Node) -> Array:
+	var arr = []
+	if node is MeshInstance3D:
+		arr.append(node)
+	for child in node.get_children():
+		arr.append_array(_get_all_mesh_instances(child))
+	return arr
 
 
 func _on_hero_generated(_result, response_code, _headers, body):
@@ -46,12 +245,14 @@ func update_day_night_cycle(is_night: bool):
 			_light_tween.tween_property(dir_light, "light_color", target_color, 3.0)
 			_light_tween.tween_property(dir_light, "light_energy", target_energy, 3.0)
 
-			# Làm cho mặt đất mờ đi theo vào ban đêm
-			if floor_mesh and floor_mesh.material:
+			# Làm cho mặt đất ám xanh nhẹ vào ban đêm thay vì đen thui
+			if floor_mesh and floor_mesh.material_override:
 				var target_albedo = (
-					Color(0.08, 0.1, 0.15, 1) if is_night else Color(0.18, 0.2, 0.25, 1)
+					Color(0.6, 0.65, 0.8, 1.0) if is_night else Color(1.0, 1.0, 1.0, 1.0)
 				)
-				_light_tween.tween_property(floor_mesh.material, "albedo_color", target_albedo, 3.0)
+				_light_tween.tween_property(
+					floor_mesh.material_override, "albedo_color", target_albedo, 3.0
+				)
 
 
 # Thêm hàm dọn dẹp để gọi khi chuyển Scene
@@ -65,10 +266,8 @@ func clear_all_objects():
 func update_objects(server_objects: Dictionary, is_night: bool = false):
 	_latest_server_data = server_objects
 
-	# Gọi cập nhật ánh sáng
 	update_day_night_cycle(is_night)
 
-	# CHẶN NGAY TẠI CỬA: Đảm bảo Scene Tree ổn định trong lúc chuyển cảnh
 	var current_scene = get_tree().current_scene
 	if (
 		current_scene == null
@@ -86,40 +285,64 @@ func update_objects(server_objects: Dictionary, is_night: bool = false):
 		if objects_in_scene.has(obj_id):
 			var node = objects_in_scene[obj_id]
 			if is_instance_valid(node):
-				# Lerp vị trí 3D
 				var target_pos_3d = Vector3(server_pos.x, 0, server_pos.y)
 				node.position = node.position.lerp(target_pos_3d, 0.4)
 
-				# Cập nhật hướng xoay (Quay mặt Tướng)
 				if data.has("orientation"):
-					# Xoay model theo trục Y (Lưu ý hệ tọa độ 3D âm dương ngược nhau)
-					node.rotation.y = lerp_angle(node.rotation.y, -data["orientation"], 0.2)
+					node.rotation.y = lerp_angle(
+						node.rotation.y, -data["orientation"] + (PI / 2.0), 0.2
+					)
 
-				# Play Animation
 				if data.has("anim") and node.has_meta("anim_player"):
 					var anim_player: AnimationPlayer = node.get_meta("anim_player")
 					var current_anim = data["anim"]
+					anim_player.speed_scale = data.get("anim_speed", 1.0)
+
 					if (
 						anim_player.has_animation(current_anim)
 						and anim_player.current_animation != current_anim
 					):
-						# Thêm độ blend nhẹ để chuyển từ Chạy sang Đứng không bị giật
 						anim_player.play(current_anim, 0.2)
 
-				# Camera bám theo nhân vật của mình (Chuẩn MOBA Isometric)
+				if data.has("attachments"):
+					var attachments = data["attachments"]
+					var orb_container = node.get_node_or_null("OrbContainer")
+					if orb_container:
+						if orb_container.get_child_count() != attachments.size():
+							for c in orb_container.get_children():
+								c.queue_free()
+
+							var angle_step = PI * 2.0 / float(max(1, attachments.size()))
+							for i in range(attachments.size()):
+								var att_data = attachments[i]
+								var pivot = Node3D.new()
+								var angle = i * angle_step
+								pivot.position = Vector3(cos(angle) * 25.0, 0, sin(angle) * 25.0)
+								orb_container.add_child(pivot)
+
+								var url = att_data.get("model_url", "")
+								# FIX: Cấp phát ID riêng cho Orb để hàm _apply_auto_scale không bị loạn hash
+								var safe_orb_id = obj_id + "_orb_" + str(i)
+								if url.begins_with("res://"):
+									_load_local_model(url, pivot, pivot, safe_orb_id, {})
+								else:
+									_load_gltf_model(url, pivot, pivot, safe_orb_id, {})
+
 				if data.get("client_id") == str(AuthManager.user_id):
 					var cam = get_tree().current_scene.get_node_or_null("Camera3D")
-					if cam:
-						# Điều chỉnh góc xoay cố định cho Camera chuẩn MOBA
-						cam.rotation_degrees = Vector3(-55, 0, 0)  # Cúi xuống 55 độ
-						# Vị trí lùi ra sau và nâng lên cao dựa trên zoom
-						var zoom_offset = Vector3(0, 300.0 * camera_zoom, 200.0 * camera_zoom)
-						var cam_target_pos = target_pos_3d + zoom_offset
-						# Lerp mượt mà
-						cam.position = cam.position.lerp(cam_target_pos, 0.15)
+					if cam and is_camera_locked:
+						cam.fov = 40.0
+						cam.rotation_degrees = Vector3(-50, 0, 0)
+						var height = 250.0 * camera_zoom
+						var backward_dist = 200.0 * camera_zoom
+						var zoom_offset = Vector3(0, height, backward_dist)
 
-					# Ẩn/Hiện máu tạm thời (Do đã thay bằng Label3D)
-					# Cập nhật máu 3D
+						var cam_target_pos = target_pos_3d + zoom_offset
+						if cam.position.distance_to(cam_target_pos) > 200:
+							cam.position = cam_target_pos
+						else:
+							cam.position = cam.position.lerp(cam_target_pos, 0.2)
+
 					var hp_node = node.get_node_or_null("HPBar")
 					if hp_node and hp_node is Label3D:
 						var c_hp = data.get("hp", 100)
@@ -127,13 +350,11 @@ func update_objects(server_objects: Dictionary, is_night: bool = false):
 						hp_node.text = str(c_hp) + " / " + str(m_hp)
 						hp_node.modulate = Color.GREEN if c_hp > m_hp * 0.3 else Color.RED
 			else:
-				# Node đã bị Godot xóa (do chuyển scene), ta xóa khỏi bộ nhớ và tạo lại
 				objects_in_scene.erase(obj_id)
 				_create_new_object(obj_id, data, server_pos)
 		else:
 			_create_new_object(obj_id, data, server_pos)
 
-	# Dọn dẹp các object không còn tồn tại trên Server
 	var keys_to_remove = []
 	for obj_id in objects_in_scene.keys():
 		if not current_ids.has(obj_id):
@@ -150,110 +371,141 @@ func _create_new_object(obj_id: String, data: Dictionary, start_pos: Vector2):
 	new_node.position = pos_3d
 
 	var obj_color = Color(data.get("color", "WHITE"))
-	var obj_size = Vector3(data.get("size", [40, 40])[0], 10.0, data.get("size", [40, 40])[1])
 
-	var model_scale_factor = data.get("size", [40, 40])[0] / 100.0
+	# FIX AN TOÀN: Chống crash nếu Server trả mảng size có 1 phần tử
+	var raw_size = data.get("size", [40, 40])
+	var size_x = raw_size[0]
+	var size_y = raw_size[1] if raw_size.size() > 1 else raw_size[0]
+	var logic_size = Vector2(size_x, size_y)
+
+	var obj_size = Vector3(logic_size.x, 10.0, logic_size.y)
+
 	var vfx_type = data.get("vfx_type", "none")
 	var vfx_url = data.get("vfx_url", "")
 	var model_url = data.get("model_url", "")
+
 	var visual_node = Node3D.new()
-	# Áp dụng scale factor để model to nhỏ theo đúng thuộc tính "size" từ Server
-	visual_node.scale = Vector3(model_scale_factor, model_scale_factor, model_scale_factor)
+	visual_node.name = "VisualNode"
 	new_node.add_child(visual_node)
 
-	_add_3d_ui_to_node(new_node, data, obj_size)
+	var orb_container = Node3D.new()
+	orb_container.name = "OrbContainer"
+	orb_container.position.y = 15.0
+	new_node.add_child(orb_container)
+
+	if model_url != "" and vfx_type == "none" and not model_url.begins_with("res://"):
+		var fallback_mesh = MeshInstance3D.new()
+		var capsule = CapsuleMesh.new()
+		capsule.radius = logic_size.x / 2.0
+		capsule.height = logic_size.x * 1.5
+		fallback_mesh.mesh = capsule
+		fallback_mesh.position.y = capsule.height / 2.0
+		var mat = StandardMaterial3D.new()
+		mat.albedo_color = Color.DEEP_PINK
+		fallback_mesh.material_override = mat
+		fallback_mesh.name = "FallbackMesh"
+		visual_node.add_child(fallback_mesh)
+
+	var is_my_team = false
+	if _latest_server_data:
+		for id in _latest_server_data:
+			if _latest_server_data[id].get("client_id") == str(AuthManager.user_id):
+				if _latest_server_data[id].get("team") == data.get("team"):
+					is_my_team = true
+				break
+
+	if is_my_team and not data.get("indestructible", false):
+		var vision_light = SpotLight3D.new()
+		vision_light.position = Vector3(0, 60, 40)
+		vision_light.rotation_degrees = Vector3(-55, 0, 0)
+		vision_light.spot_range = 800.0
+		vision_light.spot_angle = 45.0
+		vision_light.light_energy = 8.0
+		vision_light.shadow_enabled = true
+		vision_light.light_color = Color(0.85, 0.95, 1.0, 1.0)
+		vision_light.shadow_blur = 2.0
+		new_node.add_child(vision_light)
+
+		var personal_light = OmniLight3D.new()
+		personal_light.position = Vector3(0, 70, 0)
+		personal_light.omni_range = 180.0
+		personal_light.light_energy = 0.5
+		personal_light.shadow_enabled = false
+		new_node.add_child(personal_light)
+
+	_add_3d_ui_to_node(new_node, data, obj_size, 1.0)
 	get_tree().current_scene.add_child(new_node)
 	objects_in_scene[obj_id] = new_node
 
-	# --- XỬ LÝ RENDER 3D ---
 	if model_url != "":
-		if "tree" in model_url or "rock" in model_url:
-			visual_node.rotation.y = randf() * PI * 2.0
-			# Phóng to ngẫu nhiên mạnh hơn để tán cây đan vào nhau che khuất biên giới map
-			var random_scale = randf_range(1.2, 2.5)
-			if "rock" in model_url:
-				random_scale = randf_range(0.8, 1.5)  # Đá thì nhỏ hơn xíu
-			visual_node.scale = Vector3(random_scale, random_scale, random_scale)
-			# Random nghiêng nhẹ thân cây cho tự nhiên
-			visual_node.rotation.x = randf_range(-0.1, 0.1)
-			visual_node.rotation.z = randf_range(-0.1, 0.1)
+		# Tự động xoay ngẫu nhiên nếu nó là cây cối / đất đá
+		var is_nature = "tree" in model_url or "rock" in model_url
+		if is_nature:
+			var rng = RandomNumberGenerator.new()
+			rng.seed = obj_id.hash()
+			visual_node.rotation.y = rng.randf() * PI * 2.0
 
 		if model_url.begins_with("res://"):
-			_load_local_model(model_url, visual_node, new_node)
+			_load_local_model(model_url, visual_node, new_node, obj_id, data)
 		else:
-			_load_gltf_model(model_url, visual_node, new_node)
-
+			_load_gltf_model(model_url, visual_node, new_node, obj_id, data)
 	elif vfx_url != "" or vfx_type != "none":
-		# XỬ LÝ KỸ NĂNG: DÙNG SPRITE 3D BILLBOARD KẾT HỢP SHADER SPATIAL
-		var quad = MeshInstance3D.new()
-		var plane = QuadMesh.new()
-		plane.size = Vector2(obj_size.x, obj_size.z)  # Kích thước chiêu thức
-		quad.mesh = plane
-		quad.position.y = 5.0  # Nâng nhẹ lên khỏi mặt đất
-
-		var mat = ShaderMaterial.new()
-		mat.shader = load("res://assets/vfx_procedural.gdshader")
-		mat.set_shader_parameter("base_color", obj_color)
-		quad.material_override = mat
-		visual_node.add_child(quad)
-
-		if vfx_url != "":
-			# Nếu có ảnh UGC, tải về và nạp vào tham số ugc_texture của shader
-			_load_texture_for_shader(vfx_url, mat)
-
-	else:
 		if vfx_type == "bush":
-			# Bụi cỏ MOBA chuyên nghiệp: Render nhiều Plane lá cây đan chéo nhau
-			var bush_node = Node3D.new()
-			for i in range(3):
-				var plane = MeshInstance3D.new()
-				var quad = QuadMesh.new()
-				quad.size = Vector2(obj_size.x * 1.2, obj_size.x * 0.8)
-				plane.mesh = quad
-				plane.rotation_degrees.y = i * 60 + randf_range(-10, 10)
-				plane.position.y = quad.size.y / 2.0
+			# ĐẶC TRỊ BỤI CỎ: Không dùng Model, dùng procedural plane + grass shader
+			var grass_mesh = MeshInstance3D.new()
+			var plane = PlaneMesh.new()
+			# Tăng subdivide để cỏ có nhiều vertex uốn éo trong gió
+			plane.subdivide_width = 10
+			plane.subdivide_depth = 10
+			plane.size = Vector2(obj_size.x, obj_size.z)
+			grass_mesh.mesh = plane
+			grass_mesh.position.y = 2.0  # Nâng nhẹ lên khỏi mặt đất
 
-				var mat = StandardMaterial3D.new()
-				mat.albedo_color = Color(0.1, 0.35, 0.15, 0.85)  # Xanh rêu đậm
-				mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-				mat.cull_mode = BaseMaterial3D.CULL_DISABLED  # Hiện cả 2 mặt
-				plane.material_override = mat
-				bush_node.add_child(plane)
-			visual_node.add_child(bush_node)
+			var grass_mat = ShaderMaterial.new()
+			grass_mat.shader = load("res://assets/grass_wind.gdshader")
+			# Có thể đổi màu cỏ tùy theo team hoặc cấu hình
+			grass_mat.set_shader_parameter("color_top", Color(0.1, 0.5, 0.1, 1.0))
+			grass_mat.set_shader_parameter("color_bottom", Color(0.02, 0.15, 0.05, 1.0))
+			grass_mat.set_shader_parameter("wind_speed", 2.0)
 
-		elif vfx_type == "river":
-			# Sông: Áp dụng Shader Nước mới tạo
-			var p_mesh = PlaneMesh.new()
-			p_mesh.size = Vector2(obj_size.x, obj_size.z)
-			p_mesh.subdivide_width = 5  # Chia nhỏ để shader sóng mượt hơn
-			p_mesh.subdivide_depth = 5
-
-			var mesh_inst = MeshInstance3D.new()
-			mesh_inst.mesh = p_mesh
-			mesh_inst.position.y = 0.1  # Đặt ngay trên mặt đất một chút
-
-			var mat = ShaderMaterial.new()
-			mat.shader = load("res://assets/water_animated.gdshader")
-			mesh_inst.material_override = mat
-			visual_node.add_child(mesh_inst)
-
+			grass_mesh.material_override = grass_mat
+			visual_node.add_child(grass_mesh)
 		else:
-			# Dự phòng cho các Object cơ bản (Tướng chưa có model, viên đạn base...)
-			var mesh_inst = MeshInstance3D.new()
-			var mat = StandardMaterial3D.new()
-			mat.albedo_color = obj_color
-			var box = BoxMesh.new()
-			box.size = obj_size
-			mesh_inst.mesh = box
-			mesh_inst.position.y = obj_size.y / 2.0
+			# Các vfx khác (river, mud, magic...) chạy bình thường
+			var quad = MeshInstance3D.new()
+			var plane = QuadMesh.new()
+			plane.size = Vector2(obj_size.x, obj_size.z)
+			quad.mesh = plane
+			quad.position.y = 5.0
+			var mat = ShaderMaterial.new()
+			mat.shader = load("res://assets/vfx_procedural.gdshader")
+			mat.set_shader_parameter("base_color", obj_color)
+			quad.material_override = mat
+			visual_node.add_child(quad)
+			if vfx_url != "":
+				_load_texture_for_shader(vfx_url, mat)
+	else:
+		var mesh_inst = MeshInstance3D.new()
+		mesh_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var mat = StandardMaterial3D.new()
+		mat.albedo_color = obj_color
+		mat.emission_enabled = true
+		mat.emission = obj_color
+		mat.emission_energy = 2.0
 
-			if data.get("team") == 1 and obj_color == Color("WHITE"):
-				mat.albedo_color = Color.DODGER_BLUE
-			elif data.get("team") == 2 and obj_color == Color("WHITE"):
-				mat.albedo_color = Color.CRIMSON
+		if data.get("team") == 1 and obj_color == Color("WHITE"):
+			mat.albedo_color = Color.DODGER_BLUE
+			mat.emission = Color.DODGER_BLUE
+		elif data.get("team") == 2 and obj_color == Color("WHITE"):
+			mat.albedo_color = Color.CRIMSON
+			mat.emission = Color.CRIMSON
 
-			mesh_inst.material_override = mat
-			visual_node.add_child(mesh_inst)
+		var box = BoxMesh.new()
+		box.size = Vector3(obj_size.x, 10.0, obj_size.z)
+		mesh_inst.mesh = box
+		mesh_inst.position.y = 5.0
+		mesh_inst.material_override = mat
+		visual_node.add_child(mesh_inst)
 
 
 func _load_texture_for_shader(url: String, mat: ShaderMaterial):
@@ -277,9 +529,10 @@ func _load_texture_for_shader(url: String, mat: ShaderMaterial):
 	req.request(full_url)
 
 
-func _load_gltf_model(url: String, parent_node: Node3D, root_node: Node3D):
+func _load_gltf_model(
+	url: String, parent_node: Node3D, root_node: Node3D, obj_id: String, data: Dictionary = {}
+):
 	var full_url = "http://127.0.0.1:8000" + url
-
 	var req = HTTPRequest.new()
 	root_node.add_child(req)
 	req.request_completed.connect(
@@ -290,14 +543,13 @@ func _load_gltf_model(url: String, parent_node: Node3D, root_node: Node3D):
 				var err = doc.append_from_buffer(body, "", state)
 				if err == OK:
 					var scene = doc.generate_scene(state)
-					# Áp dụng Tỉ lệ để Tướng/Trụ/Nhà chính hiển thị đúng kích cỡ của bounding box logic
-					scene.scale = Vector3(1.5, 1.5, 1.5)
+					_apply_auto_scale(scene, obj_id, data)
 					parent_node.add_child(scene)
-
-					# Tìm kiếm xương (AnimationPlayer)
+					var fallback = parent_node.get_node_or_null("FallbackMesh")
+					if fallback:
+						fallback.hide()
 					var anim_player = _find_animation_player(scene)
 					if anim_player:
-						# Lưu tham chiếu để update_objects có thể gọi
 						root_node.set_meta("anim_player", anim_player)
 			req.queue_free()
 	)
@@ -314,24 +566,26 @@ func _find_animation_player(node: Node) -> AnimationPlayer:
 	return null
 
 
-func _add_3d_ui_to_node(parent: Node3D, data: Dictionary, obj_size: Vector3):
-	# 1. Hiển thị Tên
+func _add_3d_ui_to_node(
+	parent: Node3D, data: Dictionary, obj_size: Vector3, ui_offset_scale: float = 1.0
+):
+	var y_offset = (obj_size.y + 2.5) * ui_offset_scale * 2.0
+
 	var lbl_name = Label3D.new()
 	lbl_name.text = data.get("name_display", "Khuyết Danh")
 	lbl_name.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	lbl_name.position = Vector3(0, obj_size.y + 2.5, 0)
+	lbl_name.position = Vector3(0, y_offset + 10.0, 0)
 	lbl_name.font_size = 64
 	lbl_name.outline_size = 8
 	parent.add_child(lbl_name)
 
-	# 2. Hiển thị Máu bằng Text 3D thay vì ProgressBar (Vì Progressbar 2D ko sống được trong Node3D)
 	var lbl_hp = Label3D.new()
-	lbl_hp.name = "HPBar"  # Giữ tên để hàm update tìm thấy
+	lbl_hp.name = "HPBar"
 	var current_hp = data.get("hp", 100)
 	var max_hp = data.get("max_hp", 100)
 	lbl_hp.text = str(current_hp) + " / " + str(max_hp)
 	lbl_hp.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	lbl_hp.position = Vector3(0, obj_size.y + 1.5, 0)
+	lbl_hp.position = Vector3(0, y_offset, 0)
 	lbl_hp.font_size = 48
 	lbl_hp.modulate = Color.GREEN if current_hp > max_hp * 0.3 else Color.RED
 	lbl_hp.outline_size = 6
@@ -365,15 +619,17 @@ func _apply_texture(sprite: Sprite2D, tex: Texture2D, target_size: Vector2):
 	sprite.scale = Vector2(target_size.x / tex_size.x, target_size.y / tex_size.y)
 
 
-func _load_local_model(path: String, parent_node: Node3D, root_node: Node3D):
+func _load_local_model(
+	path: String, parent_node: Node3D, root_node: Node3D, obj_id: String, data: Dictionary = {}
+):
 	if ResourceLoader.exists(path):
-		var scene_res = load(path)
-		if scene_res and scene_res is PackedScene:
-			var instance = scene_res.instantiate()
-			# Phóng to/thu nhỏ model môi trường nếu cần thiết
+		var packed_scene = load(path)
+		if packed_scene:
+			var instance = packed_scene.instantiate()
+			_apply_auto_scale(instance, obj_id, data)
 			parent_node.add_child(instance)
 			var anim_player = _find_animation_player(instance)
 			if anim_player:
 				root_node.set_meta("anim_player", anim_player)
 	else:
-		print("[Lỗi] Không tìm thấy asset môi trường cục bộ: ", path)
+		print("[Lỗi] Không tìm thấy asset: ", path)
