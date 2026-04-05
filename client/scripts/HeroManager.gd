@@ -375,32 +375,49 @@ func _load_preview_model(url: String):
 	lbl.text = "Đang tải 3D..."
 	anim_vbox.add_child(lbl)
 
+	# Định nghĩa hàm helper để tạo nút Animation (dùng chung cho cả Local và HTTP)
+	var setup_anims = func(scene_node):
+		if is_instance_valid(lbl):
+			lbl.queue_free()
+		preview_root.add_child(scene_node)
+		var player = _find_animation_player(scene_node)
+		if player:
+			var title = Label.new()
+			title.text = "- ANIMATIONS -"
+			title.modulate = Color.CYAN
+			anim_vbox.add_child(title)
+			for anim_name in player.get_animation_list():
+				var btn = Button.new()
+				btn.text = "▶ " + anim_name
+				btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+				btn.pressed.connect(func(): player.play(anim_name))
+				anim_vbox.add_child(btn)
+
+	# --- RẼ NHÁNH XỬ LÝ URL ---
+	if url.begins_with("res://"):
+		if ResourceLoader.exists(url):
+			var packed_scene = load(url)
+			if packed_scene:
+				setup_anims.call(packed_scene.instantiate())
+		else:
+			lbl.text = "Lỗi: Không tìm thấy file local!"
+		return
+
+	# Xử lý HTTP cho model tạo từ AI hoặc User Upload
 	var req = HTTPRequest.new()
 	add_child(req)
 	var full_url = "http://127.0.0.1:8000" + url
 	req.request_completed.connect(
 		func(_res, code, _hdrs, body):
-			if is_instance_valid(lbl):
-				lbl.queue_free()
 			if code == 200:
 				var doc = GLTFDocument.new()
 				var state = GLTFState.new()
 				var err = doc.append_from_buffer(body, "", state)
 				if err == OK:
-					var scene = doc.generate_scene(state)
-					preview_root.add_child(scene)
-					var player = _find_animation_player(scene)
-					if player:
-						var title = Label.new()
-						title.text = "- ANIMATIONS -"
-						title.modulate = Color.CYAN
-						anim_vbox.add_child(title)
-						for anim_name in player.get_animation_list():
-							var btn = Button.new()
-							btn.text = "▶ " + anim_name
-							btn.alignment = HORIZONTAL_ALIGNMENT_LEFT  # Ép chữ sang trái
-							btn.pressed.connect(func(): player.play(anim_name))
-							anim_vbox.add_child(btn)
+					setup_anims.call(doc.generate_scene(state))
+			else:
+				if is_instance_valid(lbl):
+					lbl.text = "Lỗi tải Model HTTP!"
 			req.queue_free()
 	)
 	req.request(full_url)

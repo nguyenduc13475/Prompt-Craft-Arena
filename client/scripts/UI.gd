@@ -100,6 +100,113 @@ func _ready():
 
 	_setup_minimap()
 
+	# --- LOAD MAP TEXTURE VÀ DISPLACEMENT TỪ CONFIG CÓ HYDRATION ---
+	var map_config = GameManager.get_meta("map_config")
+	if map_config != null:
+		var current_scene = get_tree().current_scene
+		var floor_mesh = current_scene.get_node_or_null("Floor")
+		if floor_mesh and map_config.has("ground") and map_config["ground"] != null:
+			var mat = StandardMaterial3D.new()
+			mat.uv1_scale = Vector3(1, 1, 1)
+
+			# KHỬ NHỰA TRIỆT ĐỂ: Mặt đất phải nhám và không phản quang như gương
+			mat.roughness = 0.95
+			mat.metallic = 0.0
+			mat.metallic_specular = 0.05  # Gần như tắt hẳn độ bóng phản quang
+
+			floor_mesh.set_surface_override_material(0, mat)
+			floor_mesh.material_override = mat
+
+			var cache_dir = "user://map_cache/"
+			if not DirAccess.dir_exists_absolute(cache_dir):
+				DirAccess.make_dir_recursive_absolute(cache_dir)
+
+			# Hàm Hydration nâng cấp: Nhận vào expected_hash từ Server
+			var apply_texture = func(
+				url_path: String, is_displacement: bool, expected_hash: String = ""
+			):
+				var file_name = url_path.get_file()
+				var local_res_path = "res://assets/" + url_path
+				var user_cache_path = cache_dir + file_name
+
+				var set_tex_to_mat = func(tex: Texture2D, raw_img: Image = null):
+					if is_displacement:
+						mat.heightmap_enabled = true
+						mat.heightmap_texture = tex
+						mat.heightmap_scale = 20.0  # Nâng nhẹ scale để đồi núi rõ hơn
+						mat.heightmap_deep_parallax = true
+					else:
+						mat.albedo_texture = tex
+						mat.normal_enabled = true
+						# Giảm scale normal xuống một chút để không bị nhiễu hạt (noise) quá đà
+						mat.normal_scale = 1.2
+						var img = raw_img if raw_img != null else tex.get_image()
+						if img != null:
+							var normal_img = img.duplicate()
+							normal_img.bump_map_to_normal_map(3.0)
+							mat.normal_texture = ImageTexture.create_from_image(normal_img)
+
+				var need_download = true
+
+				# 1. Ưu tiên resource có sẵn trong file build
+				if ResourceLoader.exists(local_res_path):
+					set_tex_to_mat.call(load(local_res_path))
+					print("[Client] Đã ốp Texture từ Res: ", local_res_path)
+					need_download = false
+
+				# 2. Kiểm tra Cache và Hash
+				elif FileAccess.file_exists(user_cache_path):
+					var local_hash = FileAccess.get_md5(user_cache_path)
+					# Nếu Server không gửi hash, hoặc Hash trùng khớp -> Xài cache
+					if expected_hash == "" or local_hash == expected_hash:
+						var img = Image.new()
+						var err = img.load(user_cache_path)
+						if err == OK:
+							set_tex_to_mat.call(ImageTexture.create_from_image(img), img)
+							print("[Client] Cache hợp lệ (Hash MATCH). Đã ốp từ: ", user_cache_path)
+							need_download = false
+						else:
+							print("[Client] Lỗi đọc file cache, tiến hành tải lại.")
+					else:
+						print(
+							"[Client] Hash MISMATCH! Bản đồ đã có bản cập nhật mới. Đang tải lại: ",
+							url_path
+						)
+
+				# 3. Tải mới nếu thiếu hoặc sai Hash
+				if need_download:
+					print("[Client] Hydration: Đang tải texture từ Server -> ", url_path)
+					var req = HTTPRequest.new()
+					add_child(req)
+					req.request_completed.connect(
+						func(_res, code, _hdrs, body):
+							if code == 200:
+								var file = FileAccess.open(user_cache_path, FileAccess.WRITE)
+								file.store_buffer(body)
+								file.close()
+
+								var img = Image.new()
+								img.load_png_from_buffer(body)
+								set_tex_to_mat.call(ImageTexture.create_from_image(img), img)
+								print(
+									"[Client] Hydration thành công & Đã lưu Cache mới: ", file_name
+								)
+							else:
+								print("[Client] Lỗi Hydration tải Map: Code ", code)
+							req.queue_free()
+					)
+					req.request("http://127.0.0.1:8000/static/" + url_path)
+
+			# Gọi hàm ốp ảnh Base Ground, truyền kèm Hash Server gửi xuống
+			if map_config.has("ground") and map_config["ground"] != null:
+				var h_ground = map_config.get("hash_ground", "")
+				apply_texture.call(map_config["ground"], false, h_ground)
+
+			# Gọi hàm ốp ảnh Nhấp nhô (nếu có)
+			if map_config.has("displacement") and map_config["displacement"] != null:
+				var h_disp = map_config.get("hash_displacement", "")
+				apply_texture.call(map_config["displacement"], true, h_disp)
+
 	if generate_btn:
 		generate_btn.pressed.connect(_on_generate_pressed)
 		self.mouse_filter = Control.MOUSE_FILTER_IGNORE

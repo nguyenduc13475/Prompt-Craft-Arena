@@ -7,6 +7,12 @@ var client_id: String = ""
 var current_room_id: String = ""
 
 
+func _init():
+	# MỞ KHÓA BỘ ĐỆM: Nâng từ 64KB lên 5MB để tải nổi Map 3 Đường
+	websocket.inbound_buffer_size = 5 * 1024 * 1024
+	websocket.outbound_buffer_size = 5 * 1024 * 1024
+
+
 func connect_to_server():
 	if not AuthManager.is_logged_in:
 		return
@@ -51,6 +57,8 @@ func _handle_server_message(json_str: String):
 		# Nhận lệnh ghép trận thành công
 		if data.has("type") and data["type"] == "match_found":
 			current_room_id = data["room_id"]
+			# Lưu config map để scene Main dùng
+			GameManager.set_meta("map_config", data.get("map_config", {}))
 			print("ĐÃ TÌM THẤY TRẬN! Room: ", current_room_id, " Map: ", data["map_type"])
 			match_found.emit(data["map_type"])
 		elif data.has("type") and data["type"] == "chat_message":

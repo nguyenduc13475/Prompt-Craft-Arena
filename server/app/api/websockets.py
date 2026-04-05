@@ -1,8 +1,14 @@
 import asyncio
+import copy
+import hashlib
 import json
+import os
 import random
 from typing import Dict
 
+from app.core.maps import (
+    MAP_REGISTRY,  # Import thêm cái này để lấy config bắn cho client
+)
 from app.core.state import room_manager
 
 # Cần thêm DB để load Hero khi vào trận
@@ -66,29 +72,56 @@ class ConnectionManager:
         return False
 
     async def broadcast_room_state(self):
-        """Broadcast trạng thái ĐÃ LỌC FOG OF WAR cho từng client"""
+        """Broadcast trạng thái ĐÃ LỌC FOG OF WAR (Tầm nhìn chia sẻ) cho từng client"""
         for room_id, state in room_manager.rooms.items():
+            # Bước chuẩn bị: Gom nhóm object theo Team để tính Shared Vision nhanh hơn
+            team_vision_providers = {1: [], 2: [], 3: []}
+            for obj in state.objects.values():
+                if not obj.is_deleted and getattr(obj, "hp", None) is not None:
+                    # Chỉ các object có máu (Lính, Tướng, Trụ) mới cung cấp tầm nhìn
+                    team_vision_providers[obj.team].append(obj)
+
             # Quét từng client trong phòng này
             for client_id, c_room_id in room_manager.client_to_room.items():
                 if c_room_id == room_id and client_id in self.active_connections:
-                    # 1. Tìm Hero của Client này để làm mốc Tầm nhìn
-                    my_hero = next(
-                        (
-                            o
-                            for o in state.objects.values()
-                            if getattr(o, "client_id", None) == client_id
-                        ),
-                        None,
-                    )
+                    # 1. Tìm Hero của Client này để lấy Team (Nếu đã chết, vẫn được xem map của team)
+                    my_team = None
+                    for o in state.objects.values():
+                        if getattr(o, "client_id", None) == client_id:
+                            my_team = o.team
+                            break
 
-                    # 2. Lọc danh sách object mà Client này có thể thấy
+                    if my_team is None:
+                        my_team = 1  # Fallback nếu đang load
+
+                    my_allies = team_vision_providers.get(my_team, [])
+
+                    # 2. Lọc danh sách object mà Liên minh của Client này có thể thấy
                     visible_objects = {}
                     for obj_id, obj in state.objects.items():
                         if obj.is_deleted:
                             continue
 
-                        # Nếu client chưa có hero (chưa spawn) thì cho xem all, hoặc nếu có thì check vision
-                        if not my_hero or self._check_vision(my_hero, obj):
+                        # Môi trường tĩnh (Tường, Cỏ, Sông, Cửa Hàng, Nhà Chính, Mỏ quái) luôn thấy
+                        is_static_env = (
+                            getattr(obj, "indestructible", False)
+                            or getattr(obj, "is_shop", False)
+                            or getattr(obj, "is_nexus", False)
+                            or getattr(obj, "type", "")
+                            in ["wall", "bush", "river", "tower", "spawner"]
+                        )
+
+                        # Logic: Thấy nếu là môi trường tĩnh, HOẶC cùng team, HOẶC BẤT KỲ đồng minh nào nhìn thấy nó
+                        is_visible = is_static_env or (obj.team == my_team)
+
+                        if not is_visible:
+                            # Quét qua toàn bộ đồng minh xem có ai thấy mục tiêu này không
+                            for ally in my_allies:
+                                if self._check_vision(ally, obj):
+                                    is_visible = True
+                                    break  # Chỉ cần 1 người thấy là cả team thấy
+
+                        if is_visible:
                             visible_objects[obj_id] = {
                                 "team": obj.team,
                                 "coord": obj.coord,
@@ -103,6 +136,8 @@ class ConnectionManager:
                                 "model_url": getattr(obj, "model_url", ""),
                                 "name_display": getattr(obj, "name_display", "Unknown"),
                                 "client_id": getattr(obj, "client_id", ""),
+                                "anim_speed": getattr(obj, "anim_speed", 1.0),
+                                "attachments": getattr(obj, "attachments", []),
                                 "level": getattr(obj, "level", 1),
                                 "gold": getattr(obj, "gold", 0),
                                 "kills": getattr(obj, "kills", 0),
@@ -111,6 +146,7 @@ class ConnectionManager:
                                 "inventory": getattr(obj, "inventory", []),
                                 "is_shop": getattr(obj, "is_shop", False),
                                 "stock": getattr(obj, "stock", []),
+                                "indestructible": getattr(obj, "indestructible", False),
                             }
 
                     # 3. Gửi state đã đóng gói riêng cho Client này
@@ -220,11 +256,33 @@ async def handle_found_matches(matches_found, map_type):
             f"[Matchmaking] Tạo trận thành công Room {room_id} với {len(match)} người ({team_size}v{team_size})"
         )
 
+        # Lấy cái dict config (Bỏ qua callback) để gửi về cho Client
+        map_visual_config = {}
+        if actual_map in MAP_REGISTRY:
+            map_visual_config = copy.deepcopy(MAP_REGISTRY[actual_map][0])
+
+            # TÍNH HASH TỰ ĐỘNG CHO CÁC TEXTURE (HYDRATION)
+            for tex_key in ["ground", "displacement", "water", "swamp"]:
+                img_path = map_visual_config.get(tex_key)
+                if img_path:
+                    # Đường dẫn vật lý trên server
+                    physical_path = (
+                        f"app/static/{img_path}"
+                        if not img_path.startswith("app/")
+                        else img_path
+                    )
+                    if os.path.exists(physical_path):
+                        with open(physical_path, "rb") as f:
+                            # Băm MD5 file ảnh
+                            file_hash = hashlib.md5(f.read()).hexdigest()
+                            map_visual_config[f"hash_{tex_key}"] = file_hash
+
         match_msg = json.dumps(
             {
                 "type": "match_found",
                 "room_id": room_id,
                 "map_type": actual_map,
+                "map_config": map_visual_config,
             }
         )
 
@@ -248,8 +306,8 @@ async def handle_found_matches(matches_found, map_type):
 
 
 async def wait_and_fill_bots(client_id, map_type, hero_id, min_p, max_p):
-    """Tiến trình ngầm chờ 5s (Dev Mode), nếu vẫn chưa có trận thật thì tự động sinh Bot"""
-    await asyncio.sleep(5)
+    """Tiến trình ngầm chờ 1s (Dev Mode), nếu vẫn chưa có trận thật thì tự động sinh Bot"""
+    await asyncio.sleep(1)
 
     # Kểm tra xem người chơi này còn đang chầu chực trong hàng đợi không
     is_still_waiting = any(

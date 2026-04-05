@@ -53,6 +53,11 @@ class GameObject:
         self.assists = 0
         self.inventory = []  # Danh sách chứa dict của các Item
 
+        # Thuộc tính hiển thị nâng cao (Animation Speed, Orbs)
+        self.current_anim = "Idle"
+        self.anim_speed = 1.0
+        self.attachments = []  # Pattern chuẩn: List chứa dict [{'model_url': '...', 'scale': 1.0}]
+
         # Các thuộc tính linh động (HP, mana, damage, ...)
         if attributes:
             for key, value in attributes.items():

@@ -29,7 +29,13 @@ func _unhandled_input(event):
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			GameManager.camera_zoom = clamp(GameManager.camera_zoom + 0.1, 0.2, 2.0)
 		elif event.button_index == MOUSE_BUTTON_RIGHT:
-			NetworkManager.send_input("right", game_coord)
+			var is_space_held = Input.is_key_pressed(KEY_SPACE)
+			if is_space_held:
+				NetworkManager.send_custom(
+					"right", {"coord": [game_coord.x, game_coord.y], "space_pressed": true}
+				)
+			else:
+				NetworkManager.send_input("right", game_coord)
 		elif event.button_index == MOUSE_BUTTON_LEFT:
 			# Check click Shop
 			var clicked_shop = false
