@@ -121,6 +121,24 @@ func _ready():
 			if not DirAccess.dir_exists_absolute(cache_dir):
 				DirAccess.make_dir_recursive_absolute(cache_dir)
 
+			# --- TÍNH NĂNG QUÉT RÁC THÔNG MINH (DỌN PNG CŨ KHI CẬP NHẬT JPG MỚI) ---
+			var active_map_files = []
+			for tex_key in ["ground", "displacement", "water", "swamp"]:
+				if map_config.has(tex_key) and map_config[tex_key] != null:
+					active_map_files.append(map_config[tex_key].get_file())
+
+			var dir = DirAccess.open(cache_dir)
+			if dir:
+				dir.list_dir_begin()
+				var file_name = dir.get_next()
+				while file_name != "":
+					if not dir.current_is_dir():
+						if not file_name in active_map_files:
+							dir.remove(file_name)
+							print("[Client] Đã dọn dẹp file Map Cache cũ/rác: ", file_name)
+					file_name = dir.get_next()
+			# ----------------------------------------------------------------------
+
 			# Hàm Hydration nâng cấp: Nhận vào expected_hash từ Server
 			var apply_texture = func(
 				url_path: String, is_displacement: bool, expected_hash: String = ""
@@ -138,7 +156,6 @@ func _ready():
 					else:
 						mat.albedo_texture = tex
 						mat.normal_enabled = true
-						# Giảm scale normal xuống một chút để không bị nhiễu hạt (noise) quá đà
 						mat.normal_scale = 1.2
 						var img = raw_img if raw_img != null else tex.get_image()
 						if img != null:
@@ -157,7 +174,6 @@ func _ready():
 				# 2. Kiểm tra Cache và Hash
 				elif FileAccess.file_exists(user_cache_path):
 					var local_hash = FileAccess.get_md5(user_cache_path)
-					# Nếu Server không gửi hash, hoặc Hash trùng khớp -> Xài cache
 					if expected_hash == "" or local_hash == expected_hash:
 						var img = Image.new()
 						var err = img.load(user_cache_path)
@@ -175,22 +191,32 @@ func _ready():
 
 				# 3. Tải mới nếu thiếu hoặc sai Hash
 				if need_download:
-					print("[Client] Hydration: Đang tải texture từ Server -> ", url_path)
+					print(
+						"[Client] Hydration: Đang kéo texture từ Server (Co the ton vai giay cho file >10MB) -> ",
+						url_path
+					)
 					var req = HTTPRequest.new()
 					add_child(req)
 					req.request_completed.connect(
 						func(_res, code, _hdrs, body):
 							if code == 200:
+								# Ghi file xuống ổ cứng trước
 								var file = FileAccess.open(user_cache_path, FileAccess.WRITE)
 								file.store_buffer(body)
 								file.close()
 
+								# FIX BUG LỚN: Thay vì ép kiểu PNG (load_png_from_buffer),
+								# ta load thẳng từ file trên đĩa để Godot tự nhận diện định dạng (JPG, WEBP, PNG)
 								var img = Image.new()
-								img.load_png_from_buffer(body)
-								set_tex_to_mat.call(ImageTexture.create_from_image(img), img)
-								print(
-									"[Client] Hydration thành công & Đã lưu Cache mới: ", file_name
-								)
+								var err = img.load(user_cache_path)
+								if err == OK:
+									set_tex_to_mat.call(ImageTexture.create_from_image(img), img)
+									print(
+										"[Client] Hydration thành công & Đã lưu Cache mới: ",
+										file_name
+									)
+								else:
+									print("[Client] Lỗi giải mã hình ảnh tải về. Mã lỗi: ", err)
 							else:
 								print("[Client] Lỗi Hydration tải Map: Code ", code)
 							req.queue_free()
