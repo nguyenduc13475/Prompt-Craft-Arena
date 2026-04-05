@@ -21,10 +21,14 @@ subdivide_depth = 50
 background_mode = 1
 background_color = Color(0.05, 0.05, 0.08, 1)
 ambient_light_source = 2
-ambient_light_color = Color(0.15, 0.2, 0.25, 1) ; Nâng màu xanh đêm lên để cảnh vật không đen đặc
+ambient_light_color = Color(0.15, 0.2, 0.25, 1)
 ambient_light_energy = 0.5
 tonemap_mode = 2
 tonemap_exposure = 1.2
+ssr_enabled = true
+ssr_max_steps = 64
+ssr_fade_in = 0.15
+ssr_fade_out = 2.0
 ssao_enabled = true
 ssao_radius = 2.0
 ssao_intensity = 3.0
@@ -33,11 +37,17 @@ glow_intensity = 1.0
 glow_bloom = 0.1
 glow_blend_mode = 0
 volumetric_fog_enabled = true
-volumetric_fog_density = 0.002 ; Giảm độ đặc của sương mù để nhìn rõ map hơn
+volumetric_fog_density = 0.002
 volumetric_fog_albedo = Color(0.1, 0.15, 0.2, 1)
 volumetric_fog_emission = Color(0.02, 0.02, 0.05, 1)
 
 [node name="Main" type="Node3D" unique_id=1276603877]
+
+[node name="ReflectionProbe" type="ReflectionProbe" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 500, 50, 500)
+size = Vector3(1000, 200, 1000)
+box_projection = true
+enable_shadows = true
 
 [node name="Floor" type="MeshInstance3D" parent="." unique_id=188726245]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 500, 0, 500)

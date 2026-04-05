@@ -125,7 +125,9 @@ func _ready():
 			var active_map_files = []
 			for tex_key in ["ground", "displacement", "water", "swamp"]:
 				if map_config.has(tex_key) and map_config[tex_key] != null:
-					active_map_files.append(map_config[tex_key].get_file())
+					# Phải check kỹ TYPE_STRING để né các config dạng Array như sông Bezier
+					if typeof(map_config[tex_key]) == TYPE_STRING:
+						active_map_files.append(map_config[tex_key].get_file())
 
 			var dir = DirAccess.open(cache_dir)
 			if dir:

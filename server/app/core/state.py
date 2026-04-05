@@ -70,21 +70,29 @@ class RoomManager:
 
     def process_matchmaking(self, map_type: str) -> list:
         """Thuật toán Smart Matchmaking (Breadth-First): Tìm trận đông nhất có thể"""
+        from app.core.maps import MAP_REGISTRY
+
         matches = []
         queue = self.queue[map_type]
 
+        # Xác định map này đòi bao nhiêu team (từ list structure)
+        config = MAP_REGISTRY.get(map_type, MAP_REGISTRY["3lane"])[0]
+        num_teams = len(config.get("structure", [[], []]))
+        if num_teams == 0:
+            num_teams = 2
+
         # Tìm số K (người/team) lớn nhất có thể (từ 15 lùi về 1)
-        # Để test 1 người chơi (dev mode), ta cho K lùi về 1. Nếu build thật thì lùi về 5.
         for k in range(15, 0, -1):
             # Tìm những người chấp nhận team có K người
             valid_players = [
                 p for p in queue if p.get("min_p", 5) <= k <= p.get("max_p", 5)
             ]
 
-            # Cần 2 team, mỗi team K người -> tổng cộng cần 2*k người
-            while len(valid_players) >= 2 * k:
+            # Cần num_teams, mỗi team K người -> tổng cộng cần num_teams * k người
+            total_needed = num_teams * k
+            while len(valid_players) >= total_needed:
                 # Bốc đủ số người vào 1 trận
-                match_players = valid_players[: 2 * k]
+                match_players = valid_players[:total_needed]
                 matches.append(match_players)
 
                 # Xóa họ khỏi hàng đợi

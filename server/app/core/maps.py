@@ -7,46 +7,58 @@ from app.sandbox.compiler import compile_callback
 from PIL import Image
 
 # ==========================================
-# 1. CẤU HÌNH MAP 3 ĐƯỜNG CỔ ĐIỂN
+# 1. CẤU HÌNH MAP 3 ĐƯỜNG CỔ ĐIỂN (CHUẨN LOL)
 # ==========================================
 CONFIG_3LANE = {
     "displacement": None,
     "ground": "environments/grounds/ground_1.jpg",
-    "water": "environments/masks/mask_1.png",
+    "water": [  # Dữ liệu Curve: [X, Y, Độ rộng sông]
+        (100.0, 100.0, 50.0),
+        (300.0, 300.0, 55.0),
+        (500.0, 500.0, 70.0),  # Giữa sông phình to
+        (700.0, 700.0, 55.0),
+        (900.0, 900.0, 50.0),
+    ],
     "swamp": None,
     "tree": [
-        (150, 250, 0.5, "res://assets/environments/tree/tree_1.glb", True),
-        (200, 800, 1.2, "res://assets/environments/tree/tree_2.glb", True),
+        (250, 750, 0.5, "res://assets/environments/tree/tree_1.glb", True),
+        (750, 250, 1.2, "res://assets/environments/tree/tree_2.glb", True),
     ],
     "rock": [
-        (450, 450, 0.0, "res://assets/environments/rock/rock_1.glb", True),
+        (500, 500, 0.0, "res://assets/environments/rock/rock_1.glb", True),
     ],
     "wall": [],
     "cliff": [
-        (500, 100, 0.0, "res://assets/environments/cliff/cliff_1.glb", False),
+        (450, 550, 0.0, "res://assets/environments/cliff/cliff_1.glb", False),
     ],
     "bush": [
-        (350, 350, 80, 80, 0.0, False),
-        (650, 650, 80, 80, 0.0, False),
+        (350, 650, 80, 80, 0.0, False),
+        (650, 350, 80, 80, 0.0, False),
     ],
     "structure": [
-        [  # Team 1
-            (100, 100, 0, "res://assets/environments/nexus/nexus_1.glb", True),
-            (150, 100, 0, "res://assets/environments/nexus/nexus_2.glb", True),
-            (300, 100, 0, "res://assets/environments/tower/tower_1.glb", True),
-            (50, 50, 0, "res://assets/environments/shop/magic/shop_magic_1.glb", True),
-        ],
-        [  # Team 2
-            (900, 900, 0, "res://assets/environments/nexus/nexus_1.glb", True),
-            (850, 900, 0, "res://assets/environments/nexus/nexus_2.glb", True),
-            (700, 900, 0, "res://assets/environments/tower/tower_1.glb", True),
+        [  # Team 1 (Góc Trái Dưới / Bottom-Left) - Tọa độ X nhỏ, Y lớn (Godot Z lớn)
+            (100, 900, 0, "res://assets/environments/nexus/nexus_1.glb", True),
             (
-                950,
-                950,
+                150,
+                850,
                 0,
-                "res://assets/environments/shop/magic/shop_magic_1.glb",
+                "res://assets/environments/nexus/nexus_2.glb",
                 True,
-            ),
+            ),  # Spawner
+            (300, 700, 0, "res://assets/environments/tower/tower_1.glb", True),
+            (50, 950, 0, "res://assets/environments/shop/magic/shop_magic_1.glb", True),
+        ],
+        [  # Team 2 (Góc Phải Trên / Top-Right) - Tọa độ X lớn, Y nhỏ (Godot Z nhỏ)
+            (900, 100, 0, "res://assets/environments/nexus/nexus_1.glb", True),
+            (
+                850,
+                150,
+                0,
+                "res://assets/environments/nexus/nexus_2.glb",
+                True,
+            ),  # Spawner
+            (700, 300, 0, "res://assets/environments/tower/tower_1.glb", True),
+            (950, 50, 0, "res://assets/environments/shop/magic/shop_magic_1.glb", True),
         ],
     ],
 }
@@ -100,9 +112,26 @@ def init_3lane_callback(config: dict) -> list:
         except Exception as e:
             print(f"[Init Map] Loi doc mask {mask_path}: {e}")
 
-    process_mask(
-        config.get("water"), "river", "AQUA", "river", TERRAIN_CALLBACKS.get("river")
-    )
+    # Khởi tạo object Sông Toán Học (Bezier)
+    river_points = config.get("water", [])
+    if river_points:
+        g_obj = GameObject(
+            team=3,
+            attributes={
+                "type": "river",
+                "size": [1000, 1000],
+                "color": "AQUA",
+                "vfx_type": "river_bezier",
+                "indestructible": True,
+                "river_points": river_points,  # Chuyển payload này cho Client
+            },
+        )
+        g_obj.coord = [500.0, 500.0]
+        cb = TERRAIN_CALLBACKS.get("river_bezier")
+        if cb:
+            g_obj.callback_func = compile_callback(cb)
+        objects.append(g_obj)
+
     process_mask(
         config.get("swamp"), "mud", "BROWN", "dark", TERRAIN_CALLBACKS.get("mud")
     )

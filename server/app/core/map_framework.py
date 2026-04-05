@@ -1,5 +1,52 @@
 # Thư viện Callback tiêu chuẩn cho Terrain/Cấu trúc (Dùng chung cho mọi Map)
 TERRAIN_CALLBACKS = {
+    "river_bezier": """
+def execute(event):
+    pts = getattr(event.self, 'river_points', [])
+    if not pts or len(pts) < 2: return
+    
+    # Quét tất cả object di chuyển
+    objs = get_objects(event.self.coord, 9999.0)
+    for obj in objs:
+        if getattr(obj, 'hp', None) is None: continue
+        if obj.id == event.self.id: continue
+        
+        ox = obj.coord[0]
+        oy = obj.coord[1]
+        in_water = False
+        
+        # Duyệt qua các phân đoạn của đường uốn lượn
+        for i in range(len(pts) - 1):
+            pt1 = pts[i]
+            pt2 = pts[i+1]
+            x1 = pt1[0]; y1 = pt1[1]; r1 = pt1[2]
+            x2 = pt2[0]; y2 = pt2[1]; r2 = pt2[2]
+            
+            dx = x2 - x1
+            dy = y2 - y1
+            l2 = dx*dx + dy*dy
+            if l2 == 0:
+                dist = math.hypot(ox - x1, oy - y1)
+                r = r1
+            else:
+                # Tìm hình chiếu của Obj lên đoạn thẳng sông
+                t = max(0, min(1, ((ox - x1)*dx + (oy - y1)*dy) / l2))
+                px = x1 + t*dx
+                py = y1 + t*dy
+                dist = math.hypot(ox - px, oy - py)
+                r = r1 + t * (r2 - r1)
+                
+            if dist <= r:
+                in_water = True
+                break
+                
+        if in_water:
+            if getattr(obj, 'in_river_id', '') != event.self.id:
+                obj.in_river_id = event.self.id
+        else:
+            if getattr(obj, 'in_river_id', '') == event.self.id:
+                obj.in_river_id = ''
+""",
     "bush": """
 def execute(event):
     objs = get_objects(event.self.coord, max(event.self.size[0], event.self.size[1])/2)

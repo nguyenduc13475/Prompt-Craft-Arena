@@ -101,7 +101,15 @@ async def run_game_loop():
                     if getattr(obj, "client_id", None):
                         obj.deaths += 1
                         obj.hp = getattr(obj, "max_hp", 100)
-                        obj.coord = [150.0 if obj.team == 1 else 850.0, 500.0]
+
+                        # Hồi sinh chuẩn Tế đàn (Trái dưới / Phải trên)
+                        if obj.team == 1:
+                            obj.coord = [120.0, 880.0]
+                        elif obj.team == 2:
+                            obj.coord = [880.0, 120.0]
+                        else:
+                            obj.coord = [500.0, 500.0]
+
                         obj.velocity = [0.0, 0.0]
                     else:
                         obj.is_deleted = True

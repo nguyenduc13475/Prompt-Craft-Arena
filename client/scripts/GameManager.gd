@@ -454,26 +454,71 @@ func _create_new_object(obj_id: String, data: Dictionary, start_pos: Vector2):
 			# ĐẶC TRỊ BỤI CỎ: Không dùng Model, dùng procedural plane + grass shader
 			var grass_mesh = MeshInstance3D.new()
 			var plane = PlaneMesh.new()
-			# Tăng subdivide để cỏ có nhiều vertex uốn éo trong gió
 			plane.subdivide_width = 10
 			plane.subdivide_depth = 10
 			plane.size = Vector2(obj_size.x, obj_size.z)
 			grass_mesh.mesh = plane
-			grass_mesh.position.y = 2.0  # Nâng nhẹ lên khỏi mặt đất
+			grass_mesh.position.y = 2.0
 
 			var grass_mat = ShaderMaterial.new()
 			grass_mat.shader = load("res://assets/grass_wind.gdshader")
-			# Có thể đổi màu cỏ tùy theo team hoặc cấu hình
 			grass_mat.set_shader_parameter("color_top", Color(0.1, 0.5, 0.1, 1.0))
 			grass_mat.set_shader_parameter("color_bottom", Color(0.02, 0.15, 0.05, 1.0))
 			grass_mat.set_shader_parameter("wind_speed", 2.0)
 
 			grass_mesh.material_override = grass_mat
 			visual_node.add_child(grass_mesh)
+
+			# SÔNG, SUỐI: Phải nằm phẳng và xài shader nước
+
+			# ĐẦM LẦY (SWAMP): Nằm phẳng màu xỉn
+
+			# CHỈ CHIÊU THỨC KỸ NĂNG: Mới xài Billboard và QuadMesh đứng dựng lên
+		elif vfx_type == "river_bezier":
+			var water_mesh = MeshInstance3D.new()
+			var plane = PlaneMesh.new()
+			plane.size = Vector2(1000.0, 1000.0)  # Phủ toàn map, cắt gọt bằng SDF trong Shader
+			plane.subdivide_width = 30
+			plane.subdivide_depth = 30
+			water_mesh.mesh = plane
+			water_mesh.position.y = 1.0
+
+			var mat = ShaderMaterial.new()
+			mat.shader = load("res://assets/water_animated.gdshader")
+
+			# Parse mảng điểm từ Server truyền xuống Shader
+			var pts = data.get("river_points", [])
+			var arr = []
+			for p in pts:
+				arr.append(Plane(p[0], p[1], p[2], 0.0))  # Godot Shader nhận mảng Plane như vec4
+			mat.set_shader_parameter("river_points", arr)
+			mat.set_shader_parameter("point_count", pts.size())
+
+			water_mesh.material_override = mat
+			visual_node.add_child(water_mesh)
+
+			# ĐẦM LẦY (SWAMP): Nằm phẳng màu xỉn
+
+			# CHỈ CHIÊU THỨC KỸ NĂNG: Mới xài Billboard và QuadMesh đứng dựng lên
+		elif vfx_type == "dark" and data.get("type") == "mud":
+			# ĐẦM LẦY (SWAMP): Nằm phẳng màu xỉn
+			var mud_mesh = MeshInstance3D.new()
+			var plane = PlaneMesh.new()
+			plane.size = Vector2(obj_size.x, obj_size.z)
+			mud_mesh.mesh = plane
+			mud_mesh.position.y = 0.5
+
+			var mat = StandardMaterial3D.new()
+			mat.albedo_color = Color(0.25, 0.20, 0.15, 0.85)  # Nâu xỉn bùn lầy
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			mud_mesh.material_override = mat
+			visual_node.add_child(mud_mesh)
+
+			# CHỈ CHIÊU THỨC KỸ NĂNG: Mới xài Billboard và QuadMesh đứng dựng lên
 		else:
-			# Các vfx khác (river, mud, magic...) chạy bình thường
+			# CHỈ CHIÊU THỨC KỸ NĂNG: Mới xài Billboard và QuadMesh đứng dựng lên
 			var quad = MeshInstance3D.new()
-			var plane = QuadMesh.new()
+			var plane = QuadMesh.new()  # QuadMesh mặc định quay mặt ra trước
 			plane.size = Vector2(obj_size.x, obj_size.z)
 			quad.mesh = plane
 			quad.position.y = 5.0

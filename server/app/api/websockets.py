@@ -147,8 +147,8 @@ class ConnectionManager:
                                 "is_shop": getattr(obj, "is_shop", False),
                                 "stock": getattr(obj, "stock", []),
                                 "indestructible": getattr(obj, "indestructible", False),
+                                "river_points": getattr(obj, "river_points", []),
                             }
-
                     # 3. Gửi state đã đóng gói riêng cho Client này
                     state_data = {
                         "time": state.current_time,
@@ -226,12 +226,13 @@ async def load_hero_and_spawn(
         hero_obj = GameObject(team=team, attributes=attributes, client_id=client_id)
         hero_obj.callback_func = callback_func
 
-        # Vị trí spawn có offset để tránh đè nhau trong combat tổng (Góc B-L và T-R)
-        hero_obj.coord = (
-            [100.0 + y_offset, 100.0 + y_offset]
-            if team == 1
-            else [900.0 + y_offset, 900.0 + y_offset]
-        )
+        # Vị trí spawn chuẩn: Team 1 (Góc Trái Dưới), Team 2 (Góc Phải Trên), Team 3+ (Xoay vòng)
+        if team == 1:
+            hero_obj.coord = [100.0 + y_offset, 900.0 - y_offset]
+        elif team == 2:
+            hero_obj.coord = [900.0 - y_offset, 100.0 + y_offset]
+        else:
+            hero_obj.coord = [500.0 + y_offset, 500.0 + y_offset]
         hero_obj.name_display = hero_data.name  # Thêm thuộc tính hiển thị tên
 
         # 3. Nạp vào state phòng
@@ -250,10 +251,17 @@ async def handle_found_matches(matches_found, map_type):
         )
         matched_client_ids = [p["client_id"] for p in match]
         room_id = room_manager.create_room(actual_map, matched_client_ids)
-        team_size = len(match) // 2
+
+        # Đọc xem map yêu cầu mấy team từ Registry
+        map_config = MAP_REGISTRY[actual_map][0]
+        num_teams = len(map_config.get("structure", [[], []]))
+        if num_teams == 0:
+            num_teams = 2
+
+        team_size = len(match) // num_teams
 
         print(
-            f"[Matchmaking] Tạo trận thành công Room {room_id} với {len(match)} người ({team_size}v{team_size})"
+            f"[Matchmaking] Tạo trận thành công Room {room_id} với {len(match)} người (Chia {num_teams} team, mỗi team {team_size} người)"
         )
 
         # Lấy cái dict config (Bỏ qua callback) để gửi về cho Client
@@ -264,7 +272,8 @@ async def handle_found_matches(matches_found, map_type):
             # TÍNH HASH TỰ ĐỘNG CHO CÁC TEXTURE (HYDRATION)
             for tex_key in ["ground", "displacement", "water", "swamp"]:
                 img_path = map_visual_config.get(tex_key)
-                if img_path:
+                # CHỈ xử lý băm MD5 nếu giá trị là một chuỗi (Đường dẫn file)
+                if img_path and isinstance(img_path, str):
                     # Đường dẫn vật lý trên server
                     physical_path = (
                         f"app/static/{img_path}"
@@ -290,7 +299,11 @@ async def handle_found_matches(matches_found, map_type):
             if p["client_id"] in manager.active_connections:
                 await manager.active_connections[p["client_id"]].send_text(match_msg)
 
-            team = 1 if index < team_size else 2
+            # Chia team linh hoạt (1, 2, 3...)
+            team = (index // team_size) + 1
+            if team > num_teams:
+                team = num_teams  # Phòng hờ làm tròn
+
             spawn_y_offset = (index % team_size) * 60 - ((team_size - 1) * 30)
 
             asyncio.create_task(
