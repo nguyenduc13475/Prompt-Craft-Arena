@@ -13,14 +13,27 @@ from PIL import Image
 CONFIG_3LANE = {
     "displacement": None,
     "ground": "environments/grounds/ground_1.jpg",
-    "water": [  # Dòng sông vắt chéo từ Top-Left xuống Bottom-Right
-        (0.0, 0.0, 80.0),
-        (300.0, 300.0, 90.0),
-        (500.0, 500.0, 140.0),  # Phình to ở Mid để giao tranh
-        (700.0, 700.0, 90.0),
-        (1000.0, 1000.0, 80.0),
+    "water": [
+        [  # Sông 1: Vắt chéo từ Top-Left xuống Bottom-Right
+            (0.0, 0.0, 80.0),
+            (300.0, 300.0, 90.0),
+            (500.0, 500.0, 140.0),
+            (700.0, 700.0, 90.0),
+            (1000.0, 1000.0, 80.0),
+        ]
     ],
-    "swamp": None,
+    "swamp": [
+        [  # Đầm lầy 1:
+            (170.0, 380.0, 20.0),
+            (160.0, 410.0, 25.0),
+            (220.0, 430.0, 20.0),
+        ],
+        [  # Đầm lầy 2:
+            (830.0, 620.0, 20.0),
+            (840.0, 590.0, 25.0),
+            (780.0, 570.0, 20.0),
+        ],
+    ],
     "tree": [
         # Thêm ngẫu nhiên hàng trăm cây vào các khu vực Rừng (Jungle) để tạo sương mù và chướng ngại vật
     ]
@@ -270,7 +283,7 @@ def init_3lane_callback(config: dict) -> list:
     objects = []
     CELL_SIZE = 40.0
 
-    # 2.1 Quét Image Mask (Đầm lầy, Sông)
+    # 2.1 Quét Image Mask (Đầm lầy)
     def process_mask(mask_path, obj_type, color, vfx, callback_code):
         if not mask_path:
             return
@@ -309,9 +322,14 @@ def init_3lane_callback(config: dict) -> list:
         except Exception as e:
             print(f"[Init Map] Loi doc mask {mask_path}: {e}")
 
-    # Khởi tạo object Sông Toán Học (Bezier)
-    river_points = config.get("water", [])
-    if river_points:
+    # Khởi tạo object Sông Toán Học (Bezier) - Hỗ trợ nhiều đoạn sông rời rạc
+    water_lists = config.get("water", [])
+    if water_lists and not isinstance(water_lists[0], list):
+        water_lists = [water_lists]  # Tương thích ngược nếu lỡ truyền list 1 chiều
+
+    for pts in water_lists:
+        if not pts:
+            continue
         g_obj = GameObject(
             team=3,
             attributes={
@@ -320,7 +338,7 @@ def init_3lane_callback(config: dict) -> list:
                 "color": "AQUA",
                 "vfx_type": "river_bezier",
                 "indestructible": True,
-                "river_points": river_points,
+                "river_points": pts,
             },
         )
         g_obj.coord = [500.0, 500.0]
@@ -329,9 +347,30 @@ def init_3lane_callback(config: dict) -> list:
             g_obj.callback_func = compile_callback(cb)
         objects.append(g_obj)
 
-    process_mask(
-        config.get("swamp"), "mud", "BROWN", "dark", TERRAIN_CALLBACKS.get("mud")
-    )
+    # Khởi tạo object Đầm lầy Toán Học (Bezier) - Hỗ trợ nhiều đầm lầy rời rạc
+    swamp_lists = config.get("swamp", [])
+    if swamp_lists and not isinstance(swamp_lists[0], list):
+        swamp_lists = [swamp_lists]  # Tương thích ngược
+
+    for pts in swamp_lists:
+        if not pts:
+            continue
+        s_obj = GameObject(
+            team=3,
+            attributes={
+                "type": "swamp",
+                "size": [1000, 1000],
+                "color": "BROWN",
+                "vfx_type": "swamp_bezier",
+                "indestructible": True,
+                "river_points": pts,
+            },
+        )
+        s_obj.coord = [500.0, 500.0]
+        s_cb = TERRAIN_CALLBACKS.get("swamp_bezier")
+        if s_cb:
+            s_obj.callback_func = compile_callback(s_cb)
+        objects.append(s_obj)
 
     # 2.2 Môi trường Tĩnh
     for prop in ["tree", "rock", "wall", "cliff"]:

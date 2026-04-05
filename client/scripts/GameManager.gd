@@ -142,8 +142,6 @@ func _apply_auto_scale(scene_node: Node3D, obj_id: String, data: Dictionary = {}
 	var obj_type = data.get("type", "")
 	var model_url = data.get("model_url", "")
 
-	# Phục hồi logic nhận diện thông minh (thay cho is_nature cũ)
-	# Rất quan trọng để Skill Object không bị phình to như con Tướng!
 	if obj_type == "":
 		if "tree" in model_url:
 			obj_type = "tree"
@@ -180,26 +178,26 @@ func _apply_auto_scale(scene_node: Node3D, obj_id: String, data: Dictionary = {}
 				final_scale_vec.y = 60.0 / current_height
 
 		"nexus", "shop":
-			target_width = clamp(data.get("size", [60])[0], 50.0, 70.0)
+			target_width = clamp(data.get("size", [60])[0], 40.0, 60.0)
 			target_scale = target_width / current_width
 			final_scale_vec = Vector3(target_scale, target_scale, target_scale)
 
 		"tower":
-			target_width = clamp(data.get("size", [35])[0], 30.0, 40.0)
+			target_width = clamp(data.get("size", [35])[0], 40.0, 50.0)
 			target_scale = target_width / current_width
 			final_scale_vec = Vector3(target_scale, target_scale, target_scale)
 
 		"tree":
-			target_width = clamp(data.get("size", [15])[0], 10.0, 20.0)
+			target_width = clamp(data.get("size", [15])[0], 8.0, 15.0)
 			target_scale = (
-				(target_width / current_width) * clamp(float(vertex_count) / 5000.0, 0.5, 2.0)
+				(target_width / current_width) * clamp(float(vertex_count) / 3000.0, 0.2, 2.0)
 			)
 			final_scale_vec = Vector3(target_scale, target_scale, target_scale)
 
 		"rock":
-			target_width = clamp(data.get("size", [25])[0], 20.0, 30.0)
+			target_width = clamp(data.get("size", [25])[0], 10.0, 20.0)
 			target_scale = (
-				(target_width / current_width) * clamp(float(vertex_count) / 5000.0, 0.5, 2.0)
+				(target_width / current_width) * clamp(float(vertex_count) / 3000.0, 0.2, 2.0)
 			)
 			final_scale_vec = Vector3(target_scale, target_scale, target_scale)
 
@@ -211,7 +209,7 @@ func _apply_auto_scale(scene_node: Node3D, obj_id: String, data: Dictionary = {}
 			final_scale_vec = Vector3(target_scale, target_scale, target_scale)
 
 		"minion":
-			target_width = clamp(data.get("size", [8])[0], 5.0, 10.0)
+			target_width = clamp(data.get("size", [8])[0], 10.0, 20.0)
 			target_scale = target_width / current_width
 			final_scale_vec = Vector3(target_scale, target_scale, target_scale)
 
@@ -238,6 +236,10 @@ func _apply_auto_scale(scene_node: Node3D, obj_id: String, data: Dictionary = {}
 
 	final_scale_vec *= noise_factor
 	scene_node.scale = final_scale_vec
+
+	# Tìm điểm thấp nhất của model sau khi scale và kéo nó lên Y = 0
+	var bottom_y = aabb.position.y * final_scale_vec.y
+	scene_node.position.y = -bottom_y
 
 
 func _get_vertex_count(node: Node) -> int:
@@ -348,8 +350,11 @@ func update_objects(server_objects: Dictionary, is_night: bool = false):
 				var target_pos_3d = Vector3(server_pos.x, 0, server_pos.y)
 				node.position = node.position.lerp(target_pos_3d, 0.4)
 
-				# Không bẻ cổ Node Sông vì Mesh của nó đã được render ôm sát theo tọa độ World chuẩn
-				if data.has("orientation") and data.get("vfx_type") != "river_bezier":
+				# NGĂN CHẶN XOAY TRỤC ĐỐI VỚI MÔI TRƯỜNG DẠNG ĐƯỜNG (Sông, Đầm lầy)
+				if (
+					data.has("orientation")
+					and not data.get("vfx_type") in ["river_bezier", "swamp_bezier"]
+				):
 					node.rotation.y = lerp_angle(
 						node.rotation.y, -data["orientation"] + (PI / 2.0), 0.2
 					)
@@ -417,16 +422,16 @@ func _create_new_object(obj_id: String, data: Dictionary, start_pos: Vector2):
 	var pos_3d = Vector3(start_pos.x, 0, start_pos.y)
 	new_node.position = pos_3d
 
-	var obj_color = Color(data.get("color", "WHITE"))
+	# FIX 1: GÁN GÓC XOAY NGAY TỪ ĐẦU ĐỂ KHÔNG BỊ SPIN TRÊN FRAME 1
+	if data.has("orientation") and not data.get("vfx_type") in ["river_bezier", "swamp_bezier"]:
+		new_node.rotation.y = -data["orientation"] + (PI / 2.0)
 
-	# FIX AN TOÀN: Chống crash nếu Server trả mảng size có 1 phần tử
+	var obj_color = Color(data.get("color", "WHITE"))
 	var raw_size = data.get("size", [40, 40])
 	var size_x = raw_size[0]
 	var size_y = raw_size[1] if raw_size.size() > 1 else raw_size[0]
 	var logic_size = Vector2(size_x, size_y)
-
 	var obj_size = Vector3(logic_size.x, 10.0, logic_size.y)
-
 	var vfx_type = data.get("vfx_type", "none")
 	var vfx_url = data.get("vfx_url", "")
 	var model_url = data.get("model_url", "")
@@ -539,8 +544,7 @@ func _create_new_object(obj_id: String, data: Dictionary, start_pos: Vector2):
 			mm_inst.material_override = grass_mat
 			visual_node.add_child(mm_inst)
 
-		elif vfx_type == "river_bezier":
-			# THUẬT TOÁN RIBBON MESH CHO SÔNG (Tối ưu 99% Vertex)
+		elif vfx_type in ["river_bezier", "swamp_bezier"]:
 			var st = SurfaceTool.new()
 			st.begin(Mesh.PRIMITIVE_TRIANGLES)
 
@@ -548,83 +552,167 @@ func _create_new_object(obj_id: String, data: Dictionary, start_pos: Vector2):
 			if pts.size() >= 2:
 				var uv_x = 0.0
 				var segments = 100
+				var cap_segments = 12
+				var v_count = [0]
 
+				# HÀM VẼ GÓC BO TRÒN (ĐÃ ĐƯỢC FIX TOÁN HỌC SIN/COS TUYỆT ĐỐI KHỚP VỚI THÂN)
+				var draw_cap = func(
+					center_pos: Vector2,
+					forward_dir: Vector2,
+					radius: float,
+					is_start: bool,
+					base_uv_x: float
+				):
+					var right = Vector2(-forward_dir.y, forward_dir.x)
+
+					var c_local = Vector3(
+						center_pos.x - start_pos.x, 0.0, center_pos.y - start_pos.y
+					)
+					st.set_color(Color(1.0, 1.0, 1.0, 1.0))  # Tâm của CAP an toàn tuyệt đối
+					st.set_uv(Vector2(base_uv_x, 0.5))
+					st.set_normal(Vector3.UP)
+					st.set_tangent(Plane(right.x, 0.0, right.y, 1.0))
+					st.add_vertex(c_local)
+
+					var c_idx = v_count[0]
+					v_count[0] += 1
+
+					var arc_idx = v_count[0]
+					for k in range(cap_segments + 1):
+						var t = float(k) / float(cap_segments)
+						# Tuyệt đối đi từ -90 độ (Mép trái) tới 90 độ (Mép phải)
+						var angle = lerp(-PI / 2.0, PI / 2.0, t)
+
+						var offset = Vector2.ZERO
+						if is_start:
+							# Đỉnh bắt đầu: Bầu ra phía sau (ngược hướng chảy)
+							offset = (
+								right * (sin(angle) * radius) - forward_dir * (cos(angle) * radius)
+							)
+						else:
+							# Đỉnh kết thúc: Bầu ra phía trước (theo hướng chảy)
+							offset = (
+								right * (sin(angle) * radius) + forward_dir * (cos(angle) * radius)
+							)
+
+						var l_pos = Vector3(
+							center_pos.x + offset.x - start_pos.x,
+							0.0,
+							center_pos.y + offset.y - start_pos.y
+						)
+
+						var u_val = base_uv_x + (offset.dot(forward_dir) / 80.0)
+						var v_val = (offset.dot(right) / (radius * 2.0)) + 0.5
+
+						st.set_color(Color(0.0, 0.0, 0.0, 1.0))  # Mép ngoài của CAP bị ăn mòn
+						st.set_uv(Vector2(u_val, v_val))
+						st.set_normal(Vector3.UP)
+						st.set_tangent(Plane(right.x, 0.0, right.y, 1.0))
+						st.add_vertex(l_pos)
+						v_count[0] += 1
+
+						if k > 0:
+							if is_start:
+								st.add_index(c_idx)
+								st.add_index(arc_idx + k)
+								st.add_index(arc_idx + k - 1)
+							else:
+								st.add_index(c_idx)
+								st.add_index(arc_idx + k - 1)
+								st.add_index(arc_idx + k)
+
+				# 1. Vẽ chỏm tròn đầu tiên
+				var p0 = Vector2(pts[0][0], pts[0][1])
+				var p1 = Vector2(pts[1][0], pts[1][1])
+				draw_cap.call(p0, (p1 - p0).normalized(), pts[0][2] + 30.0, true, 0.0)
+
+				var body_start = v_count[0]
+
+				# 2. Vẽ thân Sông / Đầm lầy
 				for i in range(pts.size()):
 					var pt = pts[i]
 					var p_pos = Vector2(pt[0], pt[1])
-					var radius = pt[2] + 30.0  # Bơm thêm biên độ dư 30 mét cho sóng đánh tràn bờ
+					var radius = pt[2] + 30.0
 
-					# Tính Vector hướng dòng chảy (Forward) và Vector bờ (Right)
 					var forward = Vector2()
 					if i < pts.size() - 1:
 						forward = (Vector2(pts[i + 1][0], pts[i + 1][1]) - p_pos).normalized()
 					elif i > 0:
 						forward = (p_pos - Vector2(pts[i - 1][0], pts[i - 1][1])).normalized()
 
-					var right = Vector2(-forward.y, forward.x)  # Vector vuông góc với dòng chảy
-
-					# UV.x trải dài theo khoảng cách địa lý
+					var right = Vector2(-forward.y, forward.x)
 					if i > 0:
 						uv_x += p_pos.distance_to(Vector2(pts[i - 1][0], pts[i - 1][1])) / 80.0
 
-					# Quét qua các lát cắt ngang mặt sông
 					for j in range(segments + 1):
-						var t = float(j) / float(segments)  # Tỉ lệ t từ 0.0 (Bờ trái) đến 1.0 (Bờ phải)
+						var t = float(j) / float(segments)
 						var offset = right * ((t - 0.5) * 2.0 * radius)
 
+						# Nội suy màu từ Tâm (1.0) ra Rìa (0.0)
+						var edge_factor = 1.0 - abs(t - 0.5) * 2.0
+						st.set_color(Color(edge_factor, edge_factor, edge_factor, 1.0))
+
 						st.set_uv(Vector2(uv_x, t))
-						# Ghi Normal thẳng đứng để Shader bóp méo chiếu bóng
 						st.set_normal(Vector3.UP)
-						# Truyền Vector Vector Bờ (Right) vào Tangent để Shader biết hướng sóng xô bờ
 						st.set_tangent(Plane(right.x, 0.0, right.y, 1.0))
-
-						# Convert tọa độ map sang local Node (Node gốc được set position từ Server [500,500])
-						var local_pos = Vector3(
-							p_pos.x + offset.x - start_pos.x, 0.0, p_pos.y + offset.y - start_pos.y
+						st.add_vertex(
+							Vector3(
+								p_pos.x + offset.x - start_pos.x,
+								0.0,
+								p_pos.y + offset.y - start_pos.y
+							)
 						)
-						st.add_vertex(local_pos)
+						v_count[0] += 1
 
-					# Kết nối các điểm vừa tạo thành Triangle Mesh
 					if i > 0:
 						for j in range(segments):
-							var curr_row = i * (segments + 1)
-							var prev_row = (i - 1) * (segments + 1)
-							# Tam giác 1
-							st.add_index(prev_row + j)
-							st.add_index(curr_row + j)
-							st.add_index(prev_row + j + 1)
-							# Tam giác 2
-							st.add_index(prev_row + j + 1)
-							st.add_index(curr_row + j)
-							st.add_index(curr_row + j + 1)
+							var c_row = body_start + i * (segments + 1)
+							var p_row = body_start + (i - 1) * (segments + 1)
+							st.add_index(p_row + j)
+							st.add_index(c_row + j)
+							st.add_index(p_row + j + 1)
+							st.add_index(p_row + j + 1)
+							st.add_index(c_row + j)
+							st.add_index(c_row + j + 1)
+
+				# 3. Vẽ chỏm tròn cuối
+				var idx_last = pts.size() - 1
+				var p_last = Vector2(pts[idx_last][0], pts[idx_last][1])
+				var p_prev = Vector2(pts[idx_last - 1][0], pts[idx_last - 1][1])
+				draw_cap.call(
+					p_last, (p_last - p_prev).normalized(), pts[idx_last][2] + 30.0, false, uv_x
+				)
 
 				var water_mesh = MeshInstance3D.new()
 				water_mesh.mesh = st.commit()
-				water_mesh.position.y = 3  # Nổi nhẹ trên mặt đất
+				water_mesh.custom_aabb = AABB(Vector3(-2000, -100, -2000), Vector3(4000, 200, 4000))
 
 				var mat = ShaderMaterial.new()
-				mat.shader = load("res://assets/water_animated.gdshader")
+				var shader_path = (
+					"res://assets/swamp_animated.gdshader"
+					if vfx_type == "swamp_bezier"
+					else "res://assets/water_animated.gdshader"
+				)
+
+				if ResourceLoader.exists(shader_path):
+					mat.shader = load(shader_path)
+				else:
+					mat = StandardMaterial3D.new()
+					mat.albedo_color = (
+						Color(0.25, 0.2, 0.1, 0.8)
+						if vfx_type == "swamp_bezier"
+						else Color(0.05, 0.4, 0.6, 0.8)
+					)
+					mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+
+				if vfx_type == "swamp_bezier":
+					water_mesh.position.y = 1.0
+				else:
+					water_mesh.position.y = 3.0
+
 				water_mesh.material_override = mat
 				visual_node.add_child(water_mesh)
 
-			# ĐẦM LẦY (SWAMP): Nằm phẳng màu xỉn
-
-			# CHỈ CHIÊU THỨC KỸ NĂNG: Mới xài Billboard và QuadMesh đứng dựng lên
-		elif vfx_type == "dark" and data.get("type") == "mud":
-			# ĐẦM LẦY (SWAMP): Nằm phẳng màu xỉn
-			var mud_mesh = MeshInstance3D.new()
-			var plane = PlaneMesh.new()
-			plane.size = Vector2(obj_size.x, obj_size.z)
-			mud_mesh.mesh = plane
-			mud_mesh.position.y = 0.5
-
-			var mat = StandardMaterial3D.new()
-			mat.albedo_color = Color(0.25, 0.20, 0.15, 0.85)  # Nâu xỉn bùn lầy
-			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-			mud_mesh.material_override = mat
-			visual_node.add_child(mud_mesh)
-
-			# CHỈ CHIÊU THỨC KỸ NĂNG: Mới xài Billboard và QuadMesh đứng dựng lên
 		else:
 			# CHỈ CHIÊU THỨC KỸ NĂNG: Mới xài Billboard và QuadMesh đứng dựng lên
 			var quad = MeshInstance3D.new()

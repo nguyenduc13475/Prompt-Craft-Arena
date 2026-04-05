@@ -61,7 +61,10 @@ varying float v_real_height;
 
 void vertex() {
     v_uv = UV;
-    v_edge_dist = abs(UV.y - 0.5) * 2.0; 
+    
+    // ĐỌC VERTEX COLOR ĐỂ TÍNH MÉP CẢ THÂN LẪN CAP (Chống cắt phẳng 2 đầu)
+    v_edge_dist = 1.0 - COLOR.r; 
+    
     v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 
     float real_h = get_water_height(v_world_pos.xz, TIME * flow_speed, v_edge_dist);
