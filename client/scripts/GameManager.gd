@@ -16,6 +16,13 @@ var is_camera_locked: bool = true
 var pan_speed: float = 1200.0  # Tốc độ trượt camera
 var pan_margin: float = 20.0  # Khoảng cách chuột cách mép màn hình (pixels)
 
+# --- CAMERA ROTATION & DELAY CONFIG ---
+var cam_yaw: float = 0.0
+var cam_pitch: float = -50.0
+var is_middle_mouse_pressed: bool = false
+var debug_axes_created: bool = false
+var _cam_return_timer: float = 0.0
+
 var _latest_server_data = {}  # Truy cập bằng UI
 var _is_night_state: bool = false
 var _light_tween: Tween
@@ -24,6 +31,10 @@ var _light_tween: Tween
 var _locked_cam_offset: Vector3 = Vector3.ZERO
 var _unlocked_cam_pos: Vector3 = Vector3(500, 0, 500)
 var _is_first_camera_snap: bool = true
+
+
+func force_camera_snap():
+	_cam_return_timer = 0.0
 
 
 func _ready():
@@ -78,46 +89,66 @@ func _process(delta):
 				my_hero_node = objects_in_scene.get(id)
 				break
 
-	# Cấu hình góc nhìn chuẩn MOBA
-	var height = 250.0 * camera_zoom
-	var backward_dist = 200.0 * camera_zoom
-	var zoom_offset = Vector3(0, height, backward_dist)
-	cam.fov = 40.0
-	cam.rotation_degrees = Vector3(-50, 0, 0)
+	# Sinh World Axes phục vụ Debug nếu chưa có
+	if current_scene.name == "Main" and not debug_axes_created:
+		_create_debug_axes(current_scene)
+		debug_axes_created = true
 
-	# Nhấn Space để lập tức kéo Camera về giữa Hero (Giống LOL/HotS)
+	# Tính toán hệ trục dựa trên độ xoay Camera hiện tại (Hỗ trợ xoay bằng Chuột Giữa)
+	cam.fov = 40.0
+	cam.rotation_degrees = Vector3(cam_pitch, cam_yaw, 0)
+
+	var cam_basis = Basis.from_euler(Vector3(deg_to_rad(cam_pitch), deg_to_rad(cam_yaw), 0))
+	var distance = 350.0 * camera_zoom
+	# Camera lùi ra sau trục Z local của nó
+	var zoom_offset = cam_basis * Vector3(0, 0, distance)
+
+	# Nhấn Space để lập tức kéo Camera về giữa Hero và Reset Orientation/Zoom
 	if Input.is_key_pressed(KEY_SPACE):
 		_locked_cam_offset = Vector3.ZERO
+		_cam_return_timer = 0.0
+		cam_yaw = 0.0
+		cam_pitch = -50.0
+		camera_zoom = 1.0
 		if is_instance_valid(my_hero_node):
 			_unlocked_cam_pos = my_hero_node.position
 
-	# LOGIC CAMERA SOFT-LOCK (HotS Style)
+	# LOGIC CAMERA SOFT-LOCK KẾT HỢP DELAY 3S VÀ XOAY
 	if is_camera_locked and is_instance_valid(my_hero_node):
 		if move_vec != Vector3.ZERO:
-			# Dịch chuyển offset khi chuột ở mép
-			_locked_cam_offset += move_vec * pan_speed * delta * 0.4 * camera_zoom
-			var max_offset = 350.0 * camera_zoom  # Tối đa lùi ra xa được bao nhiêu
+			# Đảm bảo lia chuột ra mép thì tịnh tiến đúng theo hướng camera đang nhìn
+			var aligned_move = move_vec.rotated(Vector3.UP, deg_to_rad(cam_yaw))
+			_locked_cam_offset += aligned_move * pan_speed * delta * 0.4 * camera_zoom
+
+			var max_offset = 450.0 * camera_zoom
 			if _locked_cam_offset.length() > max_offset:
 				_locked_cam_offset = _locked_cam_offset.normalized() * max_offset
+
+			# Đặt lại timer 3s mỗi khi tay người chơi còn thao tác lia cam
+			_cam_return_timer = 3.0
 		else:
-			# Chuột rời mép, camera tự trôi mượt về Hero
-			_locked_cam_offset = _locked_cam_offset.lerp(Vector3.ZERO, delta * 3.5)
+			# Đếm ngược 3s trước khi auto snap về hero
+			if _cam_return_timer > 0:
+				_cam_return_timer -= delta
+			else:
+				# Chuột rời mép và đã hết 3s -> trôi mượt về Hero
+				_locked_cam_offset = _locked_cam_offset.lerp(Vector3.ZERO, delta * 3.5)
 
 		var target_look_pos = my_hero_node.position + _locked_cam_offset
 		var cam_target_pos = target_look_pos + zoom_offset
 
-		if _is_first_camera_snap or cam.position.distance_to(cam_target_pos) > 500:
+		if _is_first_camera_snap or cam.position.distance_to(cam_target_pos) > 1000:
 			cam.position = cam_target_pos
 			_is_first_camera_snap = false
 		else:
 			cam.position = cam.position.lerp(cam_target_pos, 10.0 * delta)
 
-		# Đồng bộ vị trí cho Unlocked mode
 		_unlocked_cam_pos = my_hero_node.position + _locked_cam_offset
 
 	# LOGIC CAMERA UNLOCKED (Trôi tự do)
 	elif not is_camera_locked:
-		_unlocked_cam_pos += move_vec * pan_speed * delta * camera_zoom
+		var aligned_move = move_vec.rotated(Vector3.UP, deg_to_rad(cam_yaw))
+		_unlocked_cam_pos += aligned_move * pan_speed * delta * camera_zoom
 		var cam_target_pos = _unlocked_cam_pos + zoom_offset
 
 		if _is_first_camera_snap:
@@ -125,161 +156,6 @@ func _process(delta):
 			_is_first_camera_snap = false
 		else:
 			cam.position = cam.position.lerp(cam_target_pos, 15.0 * delta)
-
-
-# --- THUẬT TOÁN AUTO-SCALE CHUẨN MOBA CỦA ANH ĐỨC ---
-func _apply_auto_scale(scene_node: Node3D, obj_id: String, data: Dictionary = {}):
-	var aabb = _get_model_aabb(scene_node)
-	var vertex_count = _get_vertex_count(scene_node)
-
-	# Kích thước gốc của Model (Width lấy trục lớn nhất giữa X và Z, Height là Y)
-	var current_width = max(aabb.size.x, aabb.size.z)
-	var current_height = aabb.size.y
-
-	if current_width < 0.01:
-		current_width = 1.0  # Tránh chia cho 0
-
-	var obj_type = data.get("type", "")
-	var model_url = data.get("model_url", "")
-
-	if obj_type == "":
-		if "tree" in model_url:
-			obj_type = "tree"
-		elif "rock" in model_url:
-			obj_type = "rock"
-		elif "wall" in model_url or "cliff" in model_url:
-			obj_type = "wall"
-		elif "tower" in model_url:
-			obj_type = "tower"
-		elif "nexus" in model_url:
-			obj_type = "nexus"
-		elif "shop" in model_url:
-			obj_type = "shop"
-		elif "minion" in model_url:
-			obj_type = "minion"
-		elif obj_id.begins_with("orb_"):
-			obj_type = "orb"
-		elif data.get("client_id", "") != "":
-			obj_type = "hero"
-		else:
-			obj_type = "skill_object"
-
-	var target_width = current_width
-	var target_scale = 1.0
-	var final_scale_vec = Vector3.ONE
-
-	match obj_type:
-		"hero", "monster", "shop_keeper":
-			target_width = clamp(data.get("size", [15])[0], 10.0, 20.0)
-			target_scale = target_width / current_width
-			var expected_height = current_height * target_scale
-			final_scale_vec = Vector3(target_scale, target_scale, target_scale)
-			if expected_height > 60.0:
-				final_scale_vec.y = 60.0 / current_height
-
-		"nexus", "shop":
-			target_width = clamp(data.get("size", [60])[0], 40.0, 60.0)
-			target_scale = target_width / current_width
-			final_scale_vec = Vector3(target_scale, target_scale, target_scale)
-
-		"tower":
-			target_width = clamp(data.get("size", [35])[0], 40.0, 50.0)
-			target_scale = target_width / current_width
-			final_scale_vec = Vector3(target_scale, target_scale, target_scale)
-
-		"tree":
-			target_width = clamp(data.get("size", [15])[0], 8.0, 15.0)
-			target_scale = (
-				(target_width / current_width) * clamp(float(vertex_count) / 3000.0, 0.2, 2.0)
-			)
-			final_scale_vec = Vector3(target_scale, target_scale, target_scale)
-
-		"rock":
-			target_width = clamp(data.get("size", [25])[0], 10.0, 20.0)
-			target_scale = (
-				(target_width / current_width) * clamp(float(vertex_count) / 3000.0, 0.2, 2.0)
-			)
-			final_scale_vec = Vector3(target_scale, target_scale, target_scale)
-
-		"wall", "cliff":
-			target_width = clamp(data.get("size", [45])[0], 40.0, 50.0)
-			target_scale = (
-				(target_width / current_width) * clamp(float(vertex_count) / 5000.0, 0.5, 2.0)
-			)
-			final_scale_vec = Vector3(target_scale, target_scale, target_scale)
-
-		"minion":
-			target_width = clamp(data.get("size", [8])[0], 10.0, 20.0)
-			target_scale = target_width / current_width
-			final_scale_vec = Vector3(target_scale, target_scale, target_scale)
-
-		"orb":
-			target_width = 8.0  # Orb thì nhỏ gọn thôi
-			target_scale = target_width / current_width
-			final_scale_vec = Vector3(target_scale, target_scale, target_scale)
-
-		_:  # Mặc định (Skill object, đạn...)
-			target_width = data.get("size", [10])[0]
-			target_scale = target_width / current_width
-			final_scale_vec = Vector3(target_scale, target_scale, target_scale)
-
-	# --- THÊM NOISE CỐ ĐỊNH DỰA TRÊN OBJ_ID ---
-	var rng = RandomNumberGenerator.new()
-	rng.seed = obj_id.hash()
-
-	# Tạo độ lệch scale từ -15% đến +15%
-	var noise_factor = rng.randf_range(0.85, 1.15)
-
-	# Chặn noise cho các object cần hitbox chuẩn / không phải môi trường
-	if obj_type in ["nexus", "tower", "shop", "hero", "minion", "orb", "skill_object"]:
-		noise_factor = 1.0
-
-	final_scale_vec *= noise_factor
-	scene_node.scale = final_scale_vec
-
-	# Tìm điểm thấp nhất của model sau khi scale và kéo nó lên Y = 0
-	var bottom_y = aabb.position.y * final_scale_vec.y
-	scene_node.position.y = -bottom_y
-
-
-func _get_vertex_count(node: Node) -> int:
-	var count = 0
-	if node is MeshInstance3D and node.mesh:
-		for i in range(node.mesh.get_surface_count()):
-			var arrays = node.mesh.surface_get_arrays(i)
-			if arrays.size() > Mesh.ARRAY_VERTEX and arrays[Mesh.ARRAY_VERTEX] != null:
-				count += arrays[Mesh.ARRAY_VERTEX].size()
-	for child in node.get_children():
-		count += _get_vertex_count(child)
-	return count
-
-
-func _get_model_aabb(node: Node) -> AABB:
-	var bounds = AABB()
-	var first = true
-	var meshes = _get_all_mesh_instances(node)
-	for m in meshes:
-		if m.mesh:
-			var mesh_aabb = m.mesh.get_aabb()
-			# Transform AABB theo local transform của mesh con
-			var transformed_aabb = m.transform * mesh_aabb
-			if first:
-				bounds = transformed_aabb
-				first = false
-			else:
-				bounds = bounds.merge(transformed_aabb)
-	if first:  # Không tìm thấy mesh nào, trả về hòm mặc định
-		bounds = AABB(Vector3(-1, -1, -1), Vector3(2, 2, 2))
-	return bounds
-
-
-func _get_all_mesh_instances(node: Node) -> Array:
-	var arr = []
-	if node is MeshInstance3D:
-		arr.append(node)
-	for child in node.get_children():
-		arr.append_array(_get_all_mesh_instances(child))
-	return arr
 
 
 func _on_hero_generated(_result, response_code, _headers, body):
@@ -308,21 +184,82 @@ func update_day_night_cycle(is_night: bool):
 			_light_tween.tween_property(dir_light, "light_energy", target_energy, 3.0)
 
 			# Làm cho mặt đất ám xanh nhẹ vào ban đêm thay vì đen thui
-			if floor_mesh and floor_mesh.material_override:
+			if floor_mesh:
 				var target_albedo = (
 					Color(0.6, 0.65, 0.8, 1.0) if is_night else Color(1.0, 1.0, 1.0, 1.0)
 				)
-				_light_tween.tween_property(
-					floor_mesh.material_override, "albedo_color", target_albedo, 3.0
-				)
+
+				# Quét đệ quy tìm tất cả MeshInstance3D trong Floor (do GLB là cụm Node3D) để đổi màu
+				var apply_night_to_meshes = func(node: Node, f_ref: Callable):
+					if node is MeshInstance3D and node.material_override:
+						if node.material_override is ShaderMaterial:
+							_light_tween.tween_property(
+								node.material_override,
+								"shader_parameter/global_tint",
+								target_albedo,
+								3.0
+							)
+						else:
+							_light_tween.tween_property(
+								node.material_override, "albedo_color", target_albedo, 3.0
+							)
+					for child in node.get_children():
+						f_ref.call(child, f_ref)
+
+				apply_night_to_meshes.call(floor_mesh, apply_night_to_meshes)
 
 
 # Thêm hàm dọn dẹp để gọi khi chuyển Scene
 func clear_all_objects():
+	debug_axes_created = false
 	for obj in objects_in_scene.values():
 		if is_instance_valid(obj):
 			obj.queue_free()
 	objects_in_scene.clear()
+
+
+func _create_debug_axes(parent_node: Node3D):
+	var axes_root = Node3D.new()
+	axes_root.name = "DebugAxes"
+
+	# Hàm tạo trục bằng BoxMesh để dễ nhìn hơn Line
+	var create_axis = func(size_vec, pos_vec, color):
+		var mesh_inst = MeshInstance3D.new()
+		var box = BoxMesh.new()
+		box.size = size_vec
+		mesh_inst.mesh = box
+		mesh_inst.position = pos_vec
+		var mat = StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.albedo_color = color
+		mesh_inst.material_override = mat
+		return mesh_inst
+
+	# Trục X (Đỏ), Y (Xanh lá), Z (Xanh dương)
+	axes_root.add_child(create_axis.call(Vector3(1000, 2, 2), Vector3(500, 1, 0), Color.RED))
+	axes_root.add_child(create_axis.call(Vector3(2, 200, 2), Vector3(0, 100, 0), Color.GREEN))
+	axes_root.add_child(create_axis.call(Vector3(2, 2, 1000), Vector3(0, 1, 500), Color.BLUE))
+
+	# Đánh dấu các mốc mỗi 100 đơn vị
+	for i in range(0, 1001, 100):
+		if i > 0:
+			var lx = Label3D.new()
+			lx.text = "X:" + str(i)
+			lx.position = Vector3(i, 5, 0)
+			lx.modulate = Color.RED
+			lx.font_size = 64
+			lx.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+			axes_root.add_child(lx)
+
+			var lz = Label3D.new()
+			lz.text = "Z:" + str(i)
+			lz.position = Vector3(0, 5, i)
+			lz.modulate = Color.DODGER_BLUE
+			lz.font_size = 64
+			lz.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+			axes_root.add_child(lz)
+
+	parent_node.add_child(axes_root)
 
 
 func update_objects(server_objects: Dictionary, is_night: bool = false):
@@ -340,14 +277,31 @@ func update_objects(server_objects: Dictionary, is_night: bool = false):
 
 	var current_ids = server_objects.keys()
 
+	# Đọc hàm nội suy cao độ
+	var h_img = get_meta("height_map_img") if has_meta("height_map_img") else null
+	var get_ground_y = func(pos_x, pos_z):
+		if h_img and not h_img.is_empty():
+			var map_s = get_meta("map_config").get("map_size", [1000.0, 1000.0])
+			var uv_x = clamp(pos_x / map_s[0], 0.0, 1.0)
+			var uv_y = clamp(pos_z / map_s[1], 0.0, 1.0)
+			var px = int(uv_x * (h_img.get_width() - 1))
+			var py = int(uv_y * (h_img.get_height() - 1))
+			var pixel_r = h_img.get_pixel(px, py).r
+			return (pixel_r * 255.0) - 128.0
+		return 0.0
+
 	for obj_id in current_ids:
 		var data = server_objects[obj_id]
 		var server_pos = Vector2(data["coord"][0], data["coord"][1])
+		var ground_y = get_ground_y.call(server_pos.x, server_pos.y)
 
 		if objects_in_scene.has(obj_id):
 			var node = objects_in_scene[obj_id]
 			if is_instance_valid(node):
-				var target_pos_3d = Vector3(server_pos.x, 0, server_pos.y)
+				# Áp dụng cao độ Y để tướng đi dốc lên dốc xuống tự nhiên cộng với offset môi trường
+				var target_pos_3d = Vector3(
+					server_pos.x, ground_y + data.get("height_offset", 0.0), server_pos.y
+				)
 				node.position = node.position.lerp(target_pos_3d, 0.4)
 
 				# NGĂN CHẶN XOAY TRỤC ĐỐI VỚI MÔI TRƯỜNG DẠNG ĐƯỜNG (Sông, Đầm lầy)
@@ -387,12 +341,10 @@ func update_objects(server_objects: Dictionary, is_night: bool = false):
 								orb_container.add_child(pivot)
 
 								var url = att_data.get("model_url", "")
-								# FIX: Cấp phát ID riêng cho Orb để hàm _apply_auto_scale không bị loạn hash
-								var safe_orb_id = obj_id + "_orb_" + str(i)
 								if url.begins_with("res://"):
-									_load_local_model(url, pivot, pivot, safe_orb_id, {})
+									_load_local_model(url, pivot, pivot, {})
 								else:
-									_load_gltf_model(url, pivot, pivot, safe_orb_id, {})
+									_load_gltf_model(url, pivot, pivot, {})
 
 				if data.get("client_id") == str(AuthManager.user_id):
 					var hp_node = node.get_node_or_null("HPBar")
@@ -419,7 +371,19 @@ func update_objects(server_objects: Dictionary, is_night: bool = false):
 
 func _create_new_object(obj_id: String, data: Dictionary, start_pos: Vector2):
 	var new_node = Node3D.new()
-	var pos_3d = Vector3(start_pos.x, 0, start_pos.y)
+
+	# Lấy độ cao ngay lúc sinh ra
+	var h_img = get_meta("height_map_img") if has_meta("height_map_img") else null
+	var ground_y = 0.0
+	if h_img and not h_img.is_empty():
+		var map_s = get_meta("map_config").get("map_size", [1000.0, 1000.0])
+		var uv_x = clamp(start_pos.x / map_s[0], 0.0, 1.0)
+		var uv_y = clamp(start_pos.y / map_s[1], 0.0, 1.0)
+		var px = int(uv_x * (h_img.get_width() - 1))
+		var py = int(uv_y * (h_img.get_height() - 1))
+		ground_y = (h_img.get_pixel(px, py).r * 255.0) - 128.0
+
+	var pos_3d = Vector3(start_pos.x, ground_y + data.get("height_offset", 0.0), start_pos.y)
 	new_node.position = pos_3d
 
 	# FIX 1: GÁN GÓC XOAY NGAY TỪ ĐẦU ĐỂ KHÔNG BỊ SPIN TRÊN FRAME 1
@@ -490,17 +454,10 @@ func _create_new_object(obj_id: String, data: Dictionary, start_pos: Vector2):
 	objects_in_scene[obj_id] = new_node
 
 	if model_url != "":
-		# Tự động xoay ngẫu nhiên nếu nó là cây cối / đất đá
-		var is_nature = "tree" in model_url or "rock" in model_url
-		if is_nature:
-			var rng = RandomNumberGenerator.new()
-			rng.seed = obj_id.hash()
-			visual_node.rotation.y = rng.randf() * PI * 2.0
-
 		if model_url.begins_with("res://"):
-			_load_local_model(model_url, visual_node, new_node, obj_id, data)
+			_load_local_model(model_url, visual_node, new_node, data)
 		else:
-			_load_gltf_model(model_url, visual_node, new_node, obj_id, data)
+			_load_gltf_model(model_url, visual_node, new_node, data)
 	elif vfx_url != "" or vfx_type != "none":
 		if vfx_type == "bush":
 			# BỤI CỎ ĐÍCH THỰC (MULTIMESH PROCEDURAL GRASS BLADES)
@@ -772,9 +729,7 @@ func _load_texture_for_shader(url: String, mat: ShaderMaterial):
 	req.request(full_url)
 
 
-func _load_gltf_model(
-	url: String, parent_node: Node3D, root_node: Node3D, obj_id: String, data: Dictionary = {}
-):
+func _load_gltf_model(url: String, parent_node: Node3D, root_node: Node3D, data: Dictionary = {}):
 	var full_url = "http://127.0.0.1:8000" + url
 	var req = HTTPRequest.new()
 	root_node.add_child(req)
@@ -786,7 +741,12 @@ func _load_gltf_model(
 				var err = doc.append_from_buffer(body, "", state)
 				if err == OK:
 					var scene = doc.generate_scene(state)
-					_apply_auto_scale(scene, obj_id, data)
+					var sc = data.get("scale", 1.0)
+					if typeof(sc) == TYPE_ARRAY:
+						scene.scale = Vector3(sc[0], sc[1], sc[2])
+					else:
+						scene.scale = Vector3(sc, sc, sc)
+
 					parent_node.add_child(scene)
 					var fallback = parent_node.get_node_or_null("FallbackMesh")
 					if fallback:
@@ -862,14 +822,17 @@ func _apply_texture(sprite: Sprite2D, tex: Texture2D, target_size: Vector2):
 	sprite.scale = Vector2(target_size.x / tex_size.x, target_size.y / tex_size.y)
 
 
-func _load_local_model(
-	path: String, parent_node: Node3D, root_node: Node3D, obj_id: String, data: Dictionary = {}
-):
+func _load_local_model(path: String, parent_node: Node3D, root_node: Node3D, data: Dictionary = {}):
 	if ResourceLoader.exists(path):
 		var packed_scene = load(path)
 		if packed_scene:
 			var instance = packed_scene.instantiate()
-			_apply_auto_scale(instance, obj_id, data)
+			var sc = data.get("scale", 1.0)
+			if typeof(sc) == TYPE_ARRAY:
+				instance.scale = Vector3(sc[0], sc[1], sc[2])
+			else:
+				instance.scale = Vector3(sc, sc, sc)
+
 			parent_node.add_child(instance)
 			var anim_player = _find_animation_player(instance)
 			if anim_player:

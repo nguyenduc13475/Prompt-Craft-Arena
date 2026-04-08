@@ -138,14 +138,20 @@ async def run_game_loop():
                                 )
                                 nearest_hero.hp = nearest_hero.max_hp
 
-                if obj.coord[0] < 20:
-                    obj.coord[0] = 20
-                if obj.coord[0] > 980:
-                    obj.coord[0] = 980
-                if obj.coord[1] < 20:
-                    obj.coord[1] = 20
-                if obj.coord[1] > 980:
-                    obj.coord[1] = 980
+                is_mobile = getattr(obj, "client_id", None) is not None or getattr(
+                    obj, "type", ""
+                ) in ["minion", "bullet"]
+                if is_mobile:
+                    # Giới hạn dựa trên map_config truyền từ state
+                    m_size = getattr(state, "map_size", (1000.0, 1000.0))
+                    if obj.coord[0] < 0:
+                        obj.coord[0] = 0
+                    if obj.coord[0] > m_size[0]:
+                        obj.coord[0] = m_size[0]
+                    if obj.coord[1] < 0:
+                        obj.coord[1] = 0
+                    if obj.coord[1] > m_size[1]:
+                        obj.coord[1] = m_size[1]
 
             state.clean_up_deleted()
 

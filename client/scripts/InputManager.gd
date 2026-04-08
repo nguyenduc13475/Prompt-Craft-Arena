@@ -22,6 +22,16 @@ func _unhandled_input(event):
 		# Fallback nếu đang ở màn hình khác
 		game_coord = mouse_pos
 
+	# Xử lý xoay Camera bằng chuột giữa (Middle Mouse)
+	if event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_MIDDLE:
+			GameManager.is_middle_mouse_pressed = event.pressed
+	elif event is InputEventMouseMotion and GameManager.is_middle_mouse_pressed:
+		GameManager.cam_yaw -= event.relative.x * 0.3
+		GameManager.cam_pitch -= event.relative.y * 0.3
+		# Khóa Pitch để không bị lật ngược camera (nhìn từ trên xuống hoặc ngang mặt)
+		GameManager.cam_pitch = clamp(GameManager.cam_pitch, -89.0, -10.0)
+
 	if event is InputEventMouseButton and event.pressed:
 		# Bắt sự kiện cuộn chuột để điều chỉnh camera_zoom (giới hạn từ 0.2 xa đến 2.0 gần)
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
@@ -29,6 +39,9 @@ func _unhandled_input(event):
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			GameManager.camera_zoom = clamp(GameManager.camera_zoom + 0.1, 0.2, 2.0)
 		elif event.button_index == MOUSE_BUTTON_RIGHT:
+			# Triệt tiêu delay 3s, lập tức Snap Camera về hướng di chuyển của Hero
+			GameManager.force_camera_snap()
+
 			var is_space_held = Input.is_key_pressed(KEY_SPACE)
 			if is_space_held:
 				NetworkManager.send_custom(

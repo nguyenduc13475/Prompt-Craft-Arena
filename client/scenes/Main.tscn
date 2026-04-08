@@ -62,8 +62,8 @@ far = 2000.0
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=393640750]
 transform = Transform3D(0.866025, 0.433013, -0.25, 0, 0.258819, 0.965926, 0.5, -0.866025, 0.258819, 500, 1000, 500)
-light_color = Color(0.6, 0.65, 0.8, 1)
-light_energy = 0.2 ; Mở nhẹ ánh trăng/mặt trời để tạo highlight cho cảnh vật
+light_color = Color(1.0, 0.95, 0.8, 1)
+light_energy = 1.0 ; Đổi thành 1.0 để ban ngày rực rỡ, GameManager sẽ tự hạ xuống 0.2 khi tới ban đêm
 shadow_enabled = true
 shadow_bias = 0.05
 shadow_normal_bias = 2.0

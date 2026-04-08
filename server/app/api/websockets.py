@@ -130,6 +130,8 @@ class ConnectionManager:
                                 "hp": getattr(obj, "hp", 100),
                                 "max_hp": getattr(obj, "max_hp", 100),
                                 "size": getattr(obj, "size", [40, 40]),
+                                "scale": getattr(obj, "scale", 1.0),
+                                "height_offset": getattr(obj, "height_offset", 0.0),
                                 "color": getattr(obj, "color", "WHITE"),
                                 "vfx_type": getattr(obj, "vfx_type", "none"),
                                 "vfx_url": getattr(obj, "vfx_url", ""),
@@ -270,21 +272,35 @@ async def handle_found_matches(matches_found, map_type):
             map_visual_config = copy.deepcopy(MAP_REGISTRY[actual_map][0])
 
             # TÍNH HASH TỰ ĐỘNG CHO CÁC TEXTURE (HYDRATION)
-            for tex_key in ["ground", "displacement", "water", "swamp"]:
-                img_path = map_visual_config.get(tex_key)
-                # CHỈ xử lý băm MD5 nếu giá trị là một chuỗi (Đường dẫn file)
-                if img_path and isinstance(img_path, str):
-                    # Đường dẫn vật lý trên server
-                    physical_path = (
-                        f"app/static/{img_path}"
-                        if not img_path.startswith("app/")
-                        else img_path
+            for tex_key in [
+                "ground_model",
+                "height_map",
+                "ground_texture",
+                "background",
+            ]:
+                item_path = map_visual_config.get(tex_key)
+
+                # Hàm hỗ trợ băm file
+                def hash_file(path_str):
+                    phys_path = (
+                        f"app/static/{path_str}"
+                        if not path_str.startswith("app/")
+                        else path_str
                     )
-                    if os.path.exists(physical_path):
-                        with open(physical_path, "rb") as f:
-                            # Băm MD5 file ảnh
-                            file_hash = hashlib.md5(f.read()).hexdigest()
-                            map_visual_config[f"hash_{tex_key}"] = file_hash
+                    if os.path.exists(phys_path):
+                        with open(phys_path, "rb") as f:
+                            return hashlib.md5(f.read()).hexdigest()
+                    return ""
+
+                if item_path:
+                    if isinstance(item_path, str):
+                        map_visual_config[f"hash_{tex_key}"] = hash_file(item_path)
+                    elif isinstance(item_path, list):
+                        hash_list = []
+                        for sub_path in item_path:
+                            if isinstance(sub_path, str):
+                                hash_list.append(hash_file(sub_path))
+                        map_visual_config[f"hash_{tex_key}"] = hash_list
 
         match_msg = json.dumps(
             {

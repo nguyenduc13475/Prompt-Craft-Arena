@@ -407,7 +407,7 @@ async def seed_data(session: AsyncSession):
         session.add(sys_user)
         await session.flush()
 
-    async def add_hero(name, prompt, hp, color, size, code, url):
+    async def add_hero(name, prompt, hp, color, size, scale, code, url):
         res = await session.execute(
             select(HeroSkillSet).where(HeroSkillSet.name == name)
         )
@@ -417,7 +417,13 @@ async def seed_data(session: AsyncSession):
                 name=name,
                 prompt=prompt,
                 owner_id=1,
-                attributes={"hp": hp, "max_hp": hp, "color": color, "size": size},
+                attributes={
+                    "hp": hp,
+                    "max_hp": hp,
+                    "color": color,
+                    "size": size,
+                    "scale": scale,
+                },
                 callback_code=code,
                 model_url=url,
                 skins=[],
@@ -431,6 +437,7 @@ async def seed_data(session: AsyncSession):
         2000,
         "GOLD",
         [50, 50],
+        10,
         HUAN_ROSE_CODE,
         "res://assets/default_heroes/huan_rose/huan_rose_normal.glb",
     )
@@ -440,6 +447,7 @@ async def seed_data(session: AsyncSession):
         1500,
         "PURPLE",
         [45, 45],
+        1.2,
         TIEN_BIP_CODE,
         "res://assets/default_heroes/tien_bip/tien_bip_normal.glb",
     )
@@ -449,6 +457,7 @@ async def seed_data(session: AsyncSession):
         1200,
         "CYAN",
         [40, 40],
+        1.3,
         KHA_BANH_CODE,
         "res://assets/default_heroes/kha_banh/kha_banh_normal.glb",
     )

@@ -100,22 +100,185 @@ func _ready():
 
 	_setup_minimap()
 
-	# --- LOAD MAP TEXTURE VÀ DISPLACEMENT TỪ CONFIG CÓ HYDRATION ---
+	# --- HỆ THỐNG HYDRATION NÂNG CAO CHO CUSTOM MAP DICTIONARY ---
 	var map_config = GameManager.get_meta("map_config")
 	if map_config != null:
 		var current_scene = get_tree().current_scene
-		var floor_mesh = current_scene.get_node_or_null("Floor")
-		if floor_mesh and map_config.has("ground") and map_config["ground"] != null:
-			var mat = StandardMaterial3D.new()
-			mat.uv1_scale = Vector3(1, 1, 1)
+		var base_fallback_mat = StandardMaterial3D.new()  # Đổi tên để tránh conflict
+		base_fallback_mat.uv1_scale = Vector3(1, 1, 1)
+		base_fallback_mat.roughness = 0.95
+		base_fallback_mat.metallic = 0.0
+		base_fallback_mat.metallic_specular = 0.05
 
-			# KHỬ NHỰA TRIỆT ĐỂ: Mặt đất phải nhám và không phản quang như gương
-			mat.roughness = 0.95
-			mat.metallic = 0.0
-			mat.metallic_specular = 0.05  # Gần như tắt hẳn độ bóng phản quang
+		# Hàm tải file chung cho cả ảnh lẫn model
+		var download_or_cache = func(url_path: String, expected_hash: String, callback: Callable):
+			var file_name = url_path.get_file()
+			var cache_dir = "user://map_cache/"
+			if not DirAccess.dir_exists_absolute(cache_dir):
+				DirAccess.make_dir_recursive_absolute(cache_dir)
 
-			floor_mesh.set_surface_override_material(0, mat)
-			floor_mesh.material_override = mat
+			var local_res_path = "res://assets/" + url_path
+			var user_cache_path = cache_dir + file_name
+
+			if ResourceLoader.exists(local_res_path):
+				callback.call(local_res_path, true)
+				return
+
+			if FileAccess.file_exists(user_cache_path):
+				var local_hash = FileAccess.get_md5(user_cache_path)
+				if expected_hash == "" or local_hash == expected_hash:
+					callback.call(user_cache_path, false)
+					return
+
+			# Tải mới
+			print("[Hydration] Đang kéo tài nguyên từ Server: ", url_path)
+			var req = HTTPRequest.new()
+			add_child(req)
+			req.request_completed.connect(
+				func(_res, code, _hdrs, body):
+					if code == 200:
+						var file = FileAccess.open(user_cache_path, FileAccess.WRITE)
+						file.store_buffer(body)
+						file.close()
+						callback.call(user_cache_path, false)
+					else:
+						print("[Lỗi] Hydration thất bại cho: ", url_path)
+					req.queue_free()
+			)
+			req.request("http://127.0.0.1:8000/static/" + url_path)
+
+		# 1. Ốp Model Đất (.glb) thay thế PlaneMesh cũ
+		if map_config.has("ground_model") and map_config["ground_model"] != null:
+			var h_model = map_config.get("hash_ground_model", "")
+			download_or_cache.call(
+				map_config["ground_model"],
+				h_model,
+				func(path, is_res):
+					var gltf = GLTFDocument.new()
+					var state = GLTFState.new()
+					var err = OK
+					var new_floor = null  # Biến cục bộ để không bị dính scope capture
+
+					if is_res:
+						var p_scene = load(path)
+						if p_scene:
+							new_floor = p_scene.instantiate()
+					else:
+						err = gltf.append_from_file(path, state)
+						if err == OK:
+							new_floor = gltf.generate_scene(state)
+
+					if new_floor:
+						new_floor.name = "Floor"  # Đổi tên TRƯỚC KHI add vào cây Node
+						# Tự động căn giữa mặt đất cho mọi loại kích thước map (kể cả map quái thai)
+						var map_s = map_config.get("map_size", [1000.0, 1000.0])
+						new_floor.position = Vector3(map_s[0] / 2.0, 0, map_s[1] / 2.0)
+						var old_mesh = current_scene.get_node_or_null("Floor")
+						if old_mesh:
+							old_mesh.queue_free()
+
+						# [FIX] Dùng call_deferred để tránh lỗi Blocked Scene Tree khi _ready() đang chạy
+						current_scene.add_child.call_deferred(new_floor)
+
+						# Hàm đệ quy quét TẤT CẢ các mesh con (Dùng chung cho cả Shader lẫn Fallback)
+						var apply_mat_to_meshes = func(
+							node: Node, target_mat: Material, f_ref: Callable
+						):
+							if node is MeshInstance3D:
+								node.material_override = target_mat
+							for child in node.get_children():
+								f_ref.call(child, target_mat, f_ref)
+
+						# 2. Xử lý Shader và Texture sau khi Model tải xong
+						if map_config.has("ground_shader"):
+							var shader_mat = ShaderMaterial.new()
+							var shader_path = map_config["ground_shader"]
+							if ResourceLoader.exists(shader_path):
+								shader_mat.shader = load(shader_path)
+
+								shader_mat.set_shader_parameter(
+									"map_size", Vector2(map_s[0], map_s[1])
+								)
+
+								# Đảm bảo có tint mặc định là trắng tinh để không bị đen (do Day/Night cycle)
+								shader_mat.set_shader_parameter(
+									"global_tint", Color(1.0, 1.0, 1.0, 1.0)
+								)
+
+								apply_mat_to_meshes.call(new_floor, shader_mat, apply_mat_to_meshes)
+
+								# Tải HeightMap
+								if map_config.has("height_map"):
+									download_or_cache.call(
+										map_config["height_map"],
+										map_config.get("hash_height_map", ""),
+										func(h_path, is_res_h):  # Đổi tên biến tránh trùng lặp
+											var img = Image.new()
+											var load_err = OK
+											if is_res_h:
+												var tex = load(h_path)
+												if tex:
+													img = tex.get_image()
+												else:
+													load_err = FAILED
+											else:
+												load_err = img.load(h_path)
+
+											if load_err == OK and img and not img.is_empty():
+												img.generate_mipmaps()
+												shader_mat.set_shader_parameter(
+													"height_map",
+													ImageTexture.create_from_image(img)
+												)
+												GameManager.set_meta("height_map_img", img)
+									)
+
+								# Tải danh sách Texture 10K & Pedestal
+								if (
+									map_config.has("ground_texture")
+									and typeof(map_config["ground_texture"]) == TYPE_ARRAY
+								):
+									var tex_list = map_config["ground_texture"]
+									var hash_list = map_config.get("hash_ground_texture", [])
+
+									for i in range(tex_list.size()):
+										var expected_h = (
+											hash_list[i] if i < hash_list.size() else ""
+										)
+										var param_name = ""
+										if i == 0:
+											param_name = "tex_ground_1"
+										elif i == 1:
+											param_name = "tex_ground_2"
+										elif i == 2:
+											param_name = "tex_pedestal"
+
+										if param_name != "":
+											# FIX CLOSURE: Dùng biến bound_param_name để chốt giá trị của vòng lặp hiện tại
+											var cb_tex = func(t_path, is_res_t, bound_param_name):
+												var tex: Texture2D
+												if is_res_t:
+													tex = load(t_path)
+												else:
+													var img = Image.new()
+													if img.load(t_path) == OK:
+														img.generate_mipmaps()
+														tex = ImageTexture.create_from_image(img)
+												if tex:
+													shader_mat.set_shader_parameter(
+														bound_param_name, tex
+													)
+											# Sử dụng .bind() để nối tham số vào Lambda
+											download_or_cache.call(
+												tex_list[i], expected_h, cb_tex.bind(param_name)
+											)
+
+						else:
+							# Không dùng shader thì ốp fallback material bằng hàm đệ quy an toàn
+							apply_mat_to_meshes.call(
+								new_floor, base_fallback_mat, apply_mat_to_meshes
+							)
+			)
 
 			var cache_dir = "user://map_cache/"
 			if not DirAccess.dir_exists_absolute(cache_dir):
@@ -123,11 +286,28 @@ func _ready():
 
 			# --- TÍNH NĂNG QUÉT RÁC THÔNG MINH (DỌN PNG CŨ KHI CẬP NHẬT JPG MỚI) ---
 			var active_map_files = []
-			for tex_key in ["ground", "displacement", "water", "swamp"]:
+			# Bổ sung đúng các key trong CONFIG_3LANE để tránh xóa nhầm file đang dùng
+			for tex_key in [
+				"ground",
+				"displacement",
+				"water",
+				"swamp",
+				"ground_model",
+				"height_map",
+				"background"
+			]:
 				if map_config.has(tex_key) and map_config[tex_key] != null:
-					# Phải check kỹ TYPE_STRING để né các config dạng Array như sông Bezier
 					if typeof(map_config[tex_key]) == TYPE_STRING:
 						active_map_files.append(map_config[tex_key].get_file())
+
+			# Quét thêm Array ground_texture
+			if (
+				map_config.has("ground_texture")
+				and typeof(map_config["ground_texture"]) == TYPE_ARRAY
+			):
+				for t in map_config["ground_texture"]:
+					if typeof(t) == TYPE_STRING:
+						active_map_files.append(t.get_file())
 
 			var dir = DirAccess.open(cache_dir)
 			if dir:
@@ -151,19 +331,21 @@ func _ready():
 
 				var set_tex_to_mat = func(tex: Texture2D, raw_img: Image = null):
 					if is_displacement:
-						mat.heightmap_enabled = true
-						mat.heightmap_texture = tex
-						mat.heightmap_scale = 20.0  # Nâng nhẹ scale để đồi núi rõ hơn
-						mat.heightmap_deep_parallax = true
+						base_fallback_mat.heightmap_enabled = true
+						base_fallback_mat.heightmap_texture = tex
+						base_fallback_mat.heightmap_scale = 20.0  # Nâng nhẹ scale để đồi núi rõ hơn
+						base_fallback_mat.heightmap_deep_parallax = true
 					else:
-						mat.albedo_texture = tex
-						mat.normal_enabled = true
-						mat.normal_scale = 1.2
+						base_fallback_mat.albedo_texture = tex
+						base_fallback_mat.normal_enabled = true
+						base_fallback_mat.normal_scale = 1.2
 						var img = raw_img if raw_img != null else tex.get_image()
 						if img != null:
 							var normal_img = img.duplicate()
 							normal_img.bump_map_to_normal_map(3.0)
-							mat.normal_texture = ImageTexture.create_from_image(normal_img)
+							base_fallback_mat.normal_texture = ImageTexture.create_from_image(
+								normal_img
+							)
 
 				var need_download = true
 
@@ -180,6 +362,7 @@ func _ready():
 						var img = Image.new()
 						var err = img.load(user_cache_path)
 						if err == OK:
+							img.generate_mipmaps()  # FIX MIPMAP
 							set_tex_to_mat.call(ImageTexture.create_from_image(img), img)
 							print("[Client] Cache hợp lệ (Hash MATCH). Đã ốp từ: ", user_cache_path)
 							need_download = false
@@ -212,6 +395,7 @@ func _ready():
 								var img = Image.new()
 								var err = img.load(user_cache_path)
 								if err == OK:
+									img.generate_mipmaps()  # FIX MIPMAP
 									set_tex_to_mat.call(ImageTexture.create_from_image(img), img)
 									print(
 										"[Client] Hydration thành công & Đã lưu Cache mới: ",
@@ -234,6 +418,33 @@ func _ready():
 			if map_config.has("displacement") and map_config["displacement"] != null:
 				var h_disp = map_config.get("hash_displacement", "")
 				apply_texture.call(map_config["displacement"], true, h_disp)
+
+			# 4. Ốp Skybox Background (Không gian vô cực bên ngoài map)
+			if map_config.has("background") and map_config["background"] != null:
+				var h_bg = map_config.get("hash_background", "")
+				download_or_cache.call(
+					map_config["background"],
+					h_bg,
+					func(bg_path, is_res_bg):
+						var tex: Texture2D
+						if is_res_bg:
+							tex = load(bg_path)
+						else:
+							var img = Image.new()
+							if img.load(bg_path) == OK:
+								img.generate_mipmaps()
+								tex = ImageTexture.create_from_image(img)
+						if tex:
+							var env_node = current_scene.get_node_or_null("WorldEnvironment")
+							if env_node and env_node.environment:
+								var sky_mat = PanoramaSkyMaterial.new()
+								sky_mat.panorama = tex
+								var sky = Sky.new()
+								sky.sky_material = sky_mat
+								env_node.environment.background_mode = Environment.BG_SKY
+								env_node.environment.sky = sky
+								print("[Client] Đã ốp Background Panorama thành công!")
+				)
 
 	if generate_btn:
 		generate_btn.pressed.connect(_on_generate_pressed)
