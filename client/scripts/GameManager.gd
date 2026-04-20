@@ -460,44 +460,114 @@ func _create_new_object(obj_id: String, data: Dictionary, start_pos: Vector2):
 			_load_gltf_model(model_url, visual_node, new_node, data)
 	elif vfx_url != "" or vfx_type != "none":
 		if vfx_type == "bush":
-			# BỤI CỎ ĐÍCH THỰC (MULTIMESH PROCEDURAL GRASS BLADES)
+			var water_mesh = MeshInstance3D.new()
+			var plane = QuadMesh.new()
+			plane.size = Vector2(obj_size.x, obj_size.z)
+			plane.orientation = PlaneMesh.FACE_Y
+			water_mesh.mesh = plane
+			water_mesh.position.y = 1.5  # Nâng cao mặt nước lên để trồi lên khỏi height map
+
+			var water_mat = ShaderMaterial.new()
+			var shader_path = "res://assets/bush_water.gdshader"
+			if ResourceLoader.exists(shader_path):
+				water_mat.shader = load(shader_path)
+				water_mat.set_shader_parameter("bush_size", Vector2(obj_size.x, obj_size.z))
+			else:
+				water_mat = StandardMaterial3D.new()
+				water_mat.albedo_color = Color(0.1, 0.4, 0.3, 0.5)
+				water_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+
+			water_mesh.material_override = water_mat
+			visual_node.add_child(water_mesh)
+
+			# --- 2. BỤI CỎ ĐÍCH THỰC (SUBDIVIDED MESH) ---
 			var multi_mesh = MultiMesh.new()
 			multi_mesh.transform_format = MultiMesh.TRANSFORM_3D
-			multi_mesh.instance_count = int(obj_size.x * obj_size.z / 10.0)  # Mật độ dày đặc
+			var max_instances = int(obj_size.x * obj_size.z / 3.0)  # X2 mật độ cỏ (chia 3 thay vì chia 6)
 
-			# Code cứng 1 cọng cỏ (1 tam giác vuốt nhọn lên cao)
 			var st = SurfaceTool.new()
 			st.begin(Mesh.PRIMITIVE_TRIANGLES)
+
+			# Thông số uốn cong lá cỏ (Subdivide làm 3 đoạn)
+			var w = 1.5  # Độ rộng gốc
+			var h1 = 6.0  # Độ cao đốt 1
+			var h2 = 12.0  # Độ cao đốt 2 (ngọn)
+			var z1 = -2.0  # Độ cong ra trước ở đốt 1
+			var z2 = -5.0  # Độ cong ra trước ở ngọn
+
+			# Tạo 5 đỉnh cho 1 cọng cỏ cong
 			st.set_uv(Vector2(0, 1))
-			st.add_vertex(Vector3(-1.5, 0, 0))
+			st.add_vertex(Vector3(-w, 0, 0))  # Đỉnh 0: Trái gốc
 			st.set_uv(Vector2(1, 1))
-			st.add_vertex(Vector3(1.5, 0, 0))
+			st.add_vertex(Vector3(w, 0, 0))  # Đỉnh 1: Phải gốc
+			st.set_uv(Vector2(0, 0.5))
+			st.add_vertex(Vector3(-w * 0.5, h1, z1))  # Đỉnh 2: Trái giữa
+			st.set_uv(Vector2(1, 0.5))
+			st.add_vertex(Vector3(w * 0.5, h1, z1))  # Đỉnh 3: Phải giữa
 			st.set_uv(Vector2(0.5, 0))
-			st.add_vertex(Vector3(0, 15.0, 0))  # Ngọn cỏ cao 15 đơn vị
+			st.add_vertex(Vector3(0, h2, z2))  # Đỉnh 4: Ngọn cỏ
+
+			# Tam giác gốc
+			st.add_index(0)
+			st.add_index(1)
+			st.add_index(2)
+			st.add_index(1)
+			st.add_index(3)
+			st.add_index(2)
+			# Tam giác ngọn
+			st.add_index(2)
+			st.add_index(3)
+			st.add_index(4)
+
 			st.generate_normals()
 			multi_mesh.mesh = st.commit()
 
-			# Scatter ngẫu nhiên hàng ngàn cọng cỏ trong Bounding Box
+			# Scatter ngẫu nhiên & Tỉa góc (Bo tròn Elip)
+			multi_mesh.instance_count = max_instances
+			var valid_instances = 0
 			var rng = RandomNumberGenerator.new()
 			rng.seed = obj_id.hash()
-			for i in range(multi_mesh.instance_count):
-				var pos = Vector3(
-					rng.randf_range(-obj_size.x / 2, obj_size.x / 2),
-					0,
-					rng.randf_range(-obj_size.z / 2, obj_size.z / 2)
+
+			for i in range(max_instances):
+				var px = rng.randf_range(-obj_size.x / 2.0, obj_size.x / 2.0)
+				var pz = rng.randf_range(-obj_size.z / 2.0, obj_size.z / 2.0)
+
+				# Tỉa góc: Chuyển tọa độ sang dải [-1, 1]
+				var nx = px / (obj_size.x / 2.0)
+				var nz = pz / (obj_size.z / 2.0)
+
+				# Phương trình Elip/Bo góc. Thêm noise để rìa lởm chởm tự nhiên
+				var dist = pow(abs(nx), 3.0) + pow(abs(nz), 3.0)
+				var edge_threshold = rng.randf_range(0.6, 1.2)
+
+				if dist > edge_threshold:
+					continue  # Bỏ qua cọng cỏ này nếu nằm tít góc viền
+
+				var pos = Vector3(px, 0, pz)
+				var rot_y = rng.randf_range(0, PI * 2)
+				# X2 độ lởm chởm chiều cao (phạm vi từ 0.8 đến 2.4 thay vì 0.7 đến 1.2)
+				var scale_mod = rng.randf_range(0.8, 2.4) * lerp(1.0, 0.5, clamp(dist, 0.0, 1.0))
+
+				var basis = Basis().rotated(Vector3.UP, rot_y).scaled(
+					Vector3(scale_mod, scale_mod, scale_mod)
 				)
-				var basis = Basis().rotated(Vector3.UP, rng.randf_range(0, PI * 2))
-				multi_mesh.set_instance_transform(i, Transform3D(basis, pos))
+				multi_mesh.set_instance_transform(valid_instances, Transform3D(basis, pos))
+				valid_instances += 1
+
+			multi_mesh.visible_instance_count = valid_instances
 
 			var mm_inst = MultiMeshInstance3D.new()
 			mm_inst.multimesh = multi_mesh
-			mm_inst.position.y = 0.5  # Nâng lên 1 chút cho khỏi cấn mặt đất
+			mm_inst.position.y = 1.0  # Nâng mảng cỏ lên theo mặt nước
 
 			var grass_mat = ShaderMaterial.new()
 			grass_mat.shader = load("res://assets/grass_wind.gdshader")
-			grass_mat.set_shader_parameter("color_top", Color(0.2, 0.6, 0.2, 1.0))
+			grass_mat.set_shader_parameter("color_top", Color(0.3, 0.7, 0.2, 1.0))
 			grass_mat.set_shader_parameter("color_bottom", Color(0.05, 0.25, 0.1, 1.0))
-			grass_mat.set_shader_parameter("wind_speed", 2.0)
+			grass_mat.set_shader_parameter("groove_color", Color(0.6, 0.8, 0.1, 1.0))
+			grass_mat.set_shader_parameter("wind_speed", 1.5)
+			grass_mat.set_shader_parameter("wind_strength", 0.6)
+
 			mm_inst.material_override = grass_mat
 			visual_node.add_child(mm_inst)
 
@@ -509,10 +579,9 @@ func _create_new_object(obj_id: String, data: Dictionary, start_pos: Vector2):
 			if pts.size() >= 2:
 				var uv_x = 0.0
 				var segments = 100
-				var cap_segments = 12
 				var v_count = [0]
 
-				# HÀM VẼ GÓC BO TRÒN (ĐÃ ĐƯỢC FIX TOÁN HỌC SIN/COS TUYỆT ĐỐI KHỚP VỚI THÂN)
+				# HÀM VẼ GÓC BO TRÒN BẰNG LƯỚI ĐỒNG NHẤT (GIẢI QUYẾT TRIỆT ĐỂ ARTIFACT VÀ ĐƯỜNG SEAM ĐEN)
 				var draw_cap = func(
 					center_pos: Vector2,
 					forward_dir: Vector2,
@@ -521,62 +590,74 @@ func _create_new_object(obj_id: String, data: Dictionary, start_pos: Vector2):
 					base_uv_x: float
 				):
 					var right = Vector2(-forward_dir.y, forward_dir.x)
+					var cap_rings = 12  # Số vòng lưới để tạo độ cong mượt (đồng nhất mật độ với thân)
 
-					var c_local = Vector3(
-						center_pos.x - start_pos.x, 0.0, center_pos.y - start_pos.y
-					)
-					st.set_color(Color(1.0, 1.0, 1.0, 1.0))  # Tâm của CAP an toàn tuyệt đối
-					st.set_uv(Vector2(base_uv_x, 0.5))
-					st.set_normal(Vector3.UP)
-					st.set_tangent(Plane(right.x, 0.0, right.y, 1.0))
-					st.add_vertex(c_local)
+					var cap_start_idx = v_count[0]
 
-					var c_idx = v_count[0]
-					v_count[0] += 1
+					# Extrude lưới thẳng thành hình bán nguyệt
+					for r in range(cap_rings + 1):
+						var s = float(r) / float(cap_rings)
+						# Dùng easing sin để lưới bo tròn không bị nhọn ở đỉnh
+						var curve_s = sin(s * PI / 2.0)
 
-					var arc_idx = v_count[0]
-					for k in range(cap_segments + 1):
-						var t = float(k) / float(cap_segments)
-						# Tuyệt đối đi từ -90 độ (Mép trái) tới 90 độ (Mép phải)
-						var angle = lerp(-PI / 2.0, PI / 2.0, t)
+						for j in range(segments + 1):
+							var t = float(j) / float(segments)
+							var w = (t - 0.5) * 2.0
 
-						var offset = Vector2.ZERO
-						if is_start:
-							# Đỉnh bắt đầu: Bầu ra phía sau (ngược hướng chảy)
-							offset = (
-								right * (sin(angle) * radius) - forward_dir * (cos(angle) * radius)
-							)
-						else:
-							# Đỉnh kết thúc: Bầu ra phía trước (theo hướng chảy)
-							offset = (
-								right * (sin(angle) * radius) + forward_dir * (cos(angle) * radius)
-							)
+							# Tọa độ ngang (giống hệt Body)
+							var lat_offset = right * (w * radius)
 
-						var l_pos = Vector3(
-							center_pos.x + offset.x - start_pos.x,
-							0.0,
-							center_pos.y + offset.y - start_pos.y
-						)
+							# Phương trình ép phình hình bán nguyệt
+							var max_forward = radius * sqrt(max(0.0, 1.0 - w * w))
+							var fwd_offset = forward_dir * (curve_s * max_forward)
 
-						var u_val = base_uv_x + (offset.dot(forward_dir) / 80.0)
-						var v_val = (offset.dot(right) / (radius * 2.0)) + 0.5
-
-						st.set_color(Color(0.0, 0.0, 0.0, 1.0))  # Mép ngoài của CAP bị ăn mòn
-						st.set_uv(Vector2(u_val, v_val))
-						st.set_normal(Vector3.UP)
-						st.set_tangent(Plane(right.x, 0.0, right.y, 1.0))
-						st.add_vertex(l_pos)
-						v_count[0] += 1
-
-						if k > 0:
 							if is_start:
-								st.add_index(c_idx)
-								st.add_index(arc_idx + k)
-								st.add_index(arc_idx + k - 1)
+								fwd_offset = -fwd_offset  # Bầu ra phía sau
+
+							var l_pos = Vector3(
+								center_pos.x + lat_offset.x + fwd_offset.x - start_pos.x,
+								0.0,
+								center_pos.y + lat_offset.y + fwd_offset.y - start_pos.y
+							)
+
+							# TÍNH TOÁN RADIAL GRADIENT ĐỂ VUỐT MỜ ĐỈNH CHÓP XUỐNG ĐẤT
+							# Thay vì chỉ vuốt mờ 2 bên lề (abs(w)), ta phải vuốt mờ theo hình bán nguyệt
+							var normalized_dist = sqrt(w * w + curve_s * curve_s * (1.0 - w * w))
+							var edge_factor = clamp(1.0 - normalized_dist, 0.0, 1.0)
+
+							st.set_color(Color(edge_factor, edge_factor, edge_factor, 1.0))
+
+							var u_val = base_uv_x + (fwd_offset.dot(forward_dir) / 80.0)
+
+							st.set_uv(Vector2(u_val, t))
+							st.set_normal(Vector3.UP)
+							st.set_tangent(Plane(right.x, 0.0, right.y, 1.0))
+							st.add_vertex(l_pos)
+							v_count[0] += 1
+
+					# Nối Triangle cho Cap (Quét lưới Grid y chang lưới thân sông)
+					for r in range(cap_rings):
+						for j in range(segments):
+							var c_row = cap_start_idx + r * (segments + 1)
+							var n_row = cap_start_idx + (r + 1) * (segments + 1)
+
+							if is_start:
+								# Đảo chiều Winding cho Start Cap để mặt lưới luôn ngửa lên trên
+								st.add_index(c_row + j)
+								st.add_index(c_row + j + 1)
+								st.add_index(n_row + j)
+
+								st.add_index(c_row + j + 1)
+								st.add_index(n_row + j + 1)
+								st.add_index(n_row + j)
 							else:
-								st.add_index(c_idx)
-								st.add_index(arc_idx + k - 1)
-								st.add_index(arc_idx + k)
+								st.add_index(c_row + j)
+								st.add_index(n_row + j)
+								st.add_index(c_row + j + 1)
+
+								st.add_index(c_row + j + 1)
+								st.add_index(n_row + j)
+								st.add_index(n_row + j + 1)
 
 				# 1. Vẽ chỏm tròn đầu tiên
 				var p0 = Vector2(pts[0][0], pts[0][1])

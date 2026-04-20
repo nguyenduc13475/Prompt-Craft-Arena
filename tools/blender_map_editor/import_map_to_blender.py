@@ -1,44 +1,11 @@
-import random
+import os
 
-from app.core.map_framework import TERRAIN_CALLBACKS
-from app.models.object import GameObject
-from app.sandbox.compiler import compile_callback
+import bpy
 
-# ==========================================
-# 1. CẤU HÌNH MAP 3 ĐƯỜNG CỔ ĐIỂN (CHUẨN LOL)
-# Cấu trúc mới: (x, y, rotation, scale, height_offset, glb_url, destructivity)
-# ==========================================
-CONFIG_3LANE = {
-    "background": "environments/textures/background_1.png",
-    "ground_model": "environments/models/ground_model_2.glb",
-    "ground_texture": [
-        "environments/textures/ground_texture_1.jpg",
-        "environments/textures/ground_texture_2.jpg",
-        "environments/textures/pedestal_texture_1.png",
-    ],
-    "ground_shader": "res://assets/ground_1.gdshader",
-    "height_map": "environments/masks/height_map_2.png",
-    "map_size": (1000.0, 1000.0),
-    "water": [
-        [  # Hồ 1: Vắt chéo từ Top-Left xuống Mid
-            (200.0, 200.0, 80.0),
-            (250.0, 250.0, 90.0),
-            (300.0, 300.0, 140.0),
-            (350.0, 350.0, 90.0),
-            (400.0, 400.0, 80.0),
-        ],
-        [  # Hồ 2: Vắt chéo từ Mid xuống Bottom-Right
-            (600.0, 600.0, 80.0),
-            (650.0, 650.0, 90.0),
-            (700.0, 700.0, 140.0),
-            (750.0, 750.0, 90.0),
-            (800.0, 800.0, 80.0),
-        ],
-    ],
-    "swamp": [
-        [(170.0, 380.0, 20.0), (160.0, 410.0, 25.0), (220.0, 430.0, 20.0)],
-        [(830.0, 620.0, 20.0), (840.0, 590.0, 25.0), (780.0, 570.0, 20.0)],
-    ],
+ASSET_BASE_DIR = r"C:\Users\pc\Old PC Mimic\All Important Folders\thuctap\projects\Prompt-Craft-Arena\client\assets\environments"
+MAP_SIZE = (1000.0, 1000.0)
+
+CONFIG = {
     "tree": [
         (68.0, 1000.0, -0.0, 2.0, 0.0, "tree_2.glb", False),
         (200.0, 1005.0, -0.0, 3.0, 0.0, "tree_3.glb", False),
@@ -604,248 +571,143 @@ CONFIG_3LANE = {
     ],
 }
 
-
-def init_3lane_callback(config: dict) -> list:
-    objects = []
-
-    # 1. Khởi tạo River / Swamp Bezier
-    for terrain_key, obj_type, color_val in [
-        ("water", "river", "AQUA"),
-        ("swamp", "swamp", "BROWN"),
-    ]:
-        groups = config.get(terrain_key, [])
-        if groups and not isinstance(groups[0], list):
-            groups = [groups]
-        for pts in groups:
-            if not pts:
-                continue
-            obj = GameObject(
-                team=3,
-                attributes={
-                    "type": obj_type,
-                    "size": [1000, 1000],
-                    "color": color_val,
-                    "vfx_type": f"{obj_type}_bezier",
-                    "indestructible": True,
-                    "river_points": pts,
-                },
-            )
-            obj.coord = [500.0, 500.0]
-            cb = TERRAIN_CALLBACKS.get(f"{obj_type}_bezier")
-            if cb:
-                obj.callback_func = compile_callback(cb)
-            objects.append(obj)
-
-    # 2. Môi trường Tĩnh
-    for prop in ["tree", "rock", "wall", "cliff"]:
-        for item in config.get(prop, []):
-            x, y, rot, scale, y_offset, url, destruct = item
-
-            # Tự động nối chuỗi path nếu user nhập dạng rút gọn (vd: "tree_2.glb")
-            if not url.startswith("res://") and not url.startswith("/static/"):
-                url = f"res://assets/environments/{prop}/{url}"
-
-            g_obj = GameObject(
-                team=3,
-                attributes={
-                    "type": prop,
-                    "size": [40, 40],
-                    "scale": scale,
-                    "height_offset": y_offset,
-                    "model_url": url,
-                    "indestructible": not destruct,
-                },
-            )
-            g_obj.coord = [x, y]
-            g_obj.orientation = rot
-            cb = TERRAIN_CALLBACKS.get("wall")
-            if cb:
-                g_obj.callback_func = compile_callback(cb)
-            objects.append(g_obj)
-
-    # 3. Bụi cỏ
-    for item in config.get("bush", []):
-        x, y, w, h, rot, destruct = item
-        g_obj = GameObject(
-            team=3,
-            attributes={
-                "type": "bush",
-                "size": [w, h],
-                "vfx_type": "bush",
-                "indestructible": not destruct,
-            },
-        )
-        g_obj.coord = [x, y]
-        g_obj.orientation = rot
-        cb = TERRAIN_CALLBACKS.get("bush")
-        if cb:
-            g_obj.callback_func = compile_callback(cb)
-        objects.append(g_obj)
-
-    # 4. Cấu trúc
-    for team_idx, team_structs in enumerate(config.get("structure", [])):
-        team_id = team_idx + 1
-        for item in team_structs:
-            x, y, rot, scale, y_offset, url, destruct = item
-
-            # Tự động nối chuỗi cho cấu trúc (vd: "nexus/nexus_7.glb" hoặc "tower/tower_1.glb")
-            if not url.startswith("res://") and not url.startswith("/static/"):
-                url = f"res://assets/environments/{url}"
-
-            obj_type, size, cb_code, extra_attrs = "structure", [50, 50], None, {}
-
-            if "nexus" in url:
-                obj_type, size, extra_attrs = (
-                    "nexus",
-                    [80, 80],
-                    {"hp": 5000, "max_hp": 5000},
-                )
-                if "nexus_2" in url:
-                    obj_type, size = "spawner", [40, 40]
-                    waypoints = []
-                    if team_id == 1:
-                        waypoints = (
-                            [[100, 100], [900, 100]]
-                            if x < 150
-                            else [[900, 900], [900, 100]]
-                            if y > 850
-                            else [[500, 500], [900, 100]]
-                        )
-                    elif team_id == 2:
-                        waypoints = (
-                            [[100, 100], [100, 900]]
-                            if y < 150
-                            else [[900, 900], [100, 900]]
-                            if x > 850
-                            else [[500, 500], [100, 900]]
-                        )
-                    extra_attrs.update({"spawn_rate": 15.0, "waypoints": waypoints})
-                    cb_code = TERRAIN_CALLBACKS.get("spawner")
-            elif "tower" in url:
-                obj_type, size, cb_code = (
-                    "tower",
-                    [40, 40],
-                    TERRAIN_CALLBACKS.get("tower"),
-                )
-                extra_attrs = {
-                    "hp": 2500,
-                    "max_hp": 2500,
-                    "attack_damage": 150,
-                    "attack_range": 350.0,
-                }
-            elif "shop" in url:
-                obj_type, size = "shop", [60, 60]
-                extra_attrs = {
-                    "is_shop": True,
-                    "stock": [
-                        {
-                            "id": "item_1",
-                            "name": "Giày Phóng",
-                            "price": 300,
-                            "type": "passive",
-                            "stats": {"speed_mult": 1.5},
-                        }
-                    ],
-                }
-
-            attrs = {
-                "type": obj_type,
-                "size": size,
-                "scale": scale,
-                "height_offset": y_offset,
-                "model_url": url,
-                "indestructible": not destruct,
-                "name_display": obj_type.upper(),
-            }
-            attrs.update(extra_attrs)
-            g_obj = GameObject(team=team_id, attributes=attrs)
-            g_obj.coord = [x, y]
-            g_obj.orientation = rot
-            if cb_code:
-                g_obj.callback_func = compile_callback(cb_code)
-            objects.append(g_obj)
-
-    # 5. Quái Rừng
-    monster_spawns = [
-        (
-            250,
-            250,
-            0.0,
-            1.5,
-            0.0,
-            "res://assets/environments/monster/tauren/monster_tauren_1.glb",
-        ),
-        (
-            750,
-            750,
-            0.0,
-            1.2,
-            0.0,
-            "res://assets/environments/monster/cat/monster_cat_1.glb",
-        ),
-    ]
-    monster_ai_code = """
-def execute(event):
-    if getattr(event.self, 'hp', 0) <= 0:
-        event.self.is_deleted = True
-        return
-    if not hasattr(event.self, 'last_attack'): event.self.last_attack = 0
-    if event.current_time > event.self.last_attack + 1.5:
-        enemies = get_objects(event.self.coord, 70.0)
-        for e in enemies:
-            if getattr(e, 'hp', None) is not None and e.id != event.self.id and e.team != event.self.team:
-                e.hp = e.hp - getattr(event.self, 'attack_damage', 60)
-                event.self.last_attack = event.current_time
-                event.self.current_anim = 'Attack'
-                break
-"""
-    for x, y, rot, scale, y_offset, url in monster_spawns:
-        if not url.startswith("res://") and not url.startswith("/static/"):
-            url = f"res://assets/environments/monster/{url}"
-
-        m_obj = GameObject(
-            team=3,
-            attributes={
-                "type": "monster",
-                "size": [45, 45],
-                "scale": scale,
-                "height_offset": y_offset,
-                "model_url": url,
-                "hp": 1500,
-                "max_hp": 1500,
-                "attack_damage": 60,
-                "bounty": 150,
-                "exp_reward": 200,
-                "indestructible": False,
-                "name_display": "MONSTER",
-            },
-        )
-        m_obj.coord = [x, y]
-        m_obj.orientation = rot
-        m_obj.callback_func = compile_callback(monster_ai_code)
-        objects.append(m_obj)
-
-    return objects
+imported_cache = {}
 
 
-CONFIG_ARAM = {}
+def clear_blender_scene():
+    bpy.ops.object.select_all(action="SELECT")
+    bpy.ops.object.delete()
 
 
-def init_aram_callback(config: dict) -> list:
-    return []
+def select_hierarchy(obj):
+    obj.select_set(True)
+    for child in obj.children:
+        select_hierarchy(child)
 
 
-MAP_REGISTRY = {
-    "3lane": (CONFIG_3LANE, init_3lane_callback),
-    "aram": (CONFIG_ARAM, init_aram_callback),
-}
+def move_to_collection(obj, target_col):
+    for coll in obj.users_collection:
+        coll.objects.unlink(obj)
+    if obj.name not in target_col.objects:
+        target_col.objects.link(obj)
+    for child in obj.children:
+        move_to_collection(child, target_col)
 
 
-def load_map(game_state, map_type: str):
-    if map_type == "random":
-        map_type = random.choice(list(MAP_REGISTRY.keys()))
-    if map_type not in MAP_REGISTRY:
-        map_type = "3lane"
-    config, init_callback = MAP_REGISTRY[map_type]
-    for obj in init_callback(config):
-        game_state.add_object(obj)
+def import_map():
+    global imported_cache
+    imported_cache = {}
+    clear_blender_scene()
+
+    for category, items in CONFIG.items():
+        if category == "structure":
+            for team_idx, team_items in enumerate(items):
+                _process_items(category, team_items, f"Team_{team_idx + 1}")
+        elif isinstance(items, list) and len(items) > 0 and isinstance(items[0], tuple):
+            _process_items(category, items, category.capitalize())
+
+
+def _process_items(category, items, collection_name):
+    global imported_cache
+
+    if collection_name not in bpy.data.collections:
+        new_col = bpy.data.collections.new(collection_name)
+        bpy.context.scene.collection.children.link(new_col)
+    col = bpy.data.collections[collection_name]
+
+    for item in items:
+        # --- XỬ LÝ RIÊNG CHO BUSH ---
+        if category == "bush":
+            # Tuple bush: (x, y, w, h, rotation, destructivity)
+            x, y, w, h, rot, destruct = item
+
+            base_name = "bush_placeholder"
+            bpy.ops.mesh.primitive_plane_add(size=1)  # Tạo plane 1x1
+            target_obj = bpy.context.active_object
+            target_obj.name = base_name
+
+            # Scale w, h. Z để là 1 cho an toàn (tránh lỗi scale Z = 0 của Blender)
+            target_obj.scale = (w, h, 1.0)
+
+            # Gán vị trí (Bush thường nằm ngay trên mặt đất nên z_offset = 0)
+            target_obj.location = (x, MAP_SIZE[1] - y, 0.0)
+
+            # Gán xoay (Dịch ngược góc quay từ Godot config về Blender)
+            target_obj.rotation_mode = "XYZ"
+            target_obj.rotation_euler[2] = 1.57 - rot
+
+            move_to_collection(target_obj, col)
+            continue
+
+        # --- XỬ LÝ CHUNG CHO CÁC OBJECT CÓ FILE .GLB KHÁC ---
+        x, y, rot, scale, z_offset, url, destruct = item
+
+        clean_url = url.replace("res://assets/environments/", "").strip("/")
+
+        if category in ["tree", "rock", "wall", "cliff"] and "/" not in clean_url:
+            file_path = os.path.join(ASSET_BASE_DIR, category, clean_url)
+        else:
+            file_path = os.path.join(ASSET_BASE_DIR, clean_url.replace("/", os.sep))
+
+        # Check path
+        if not file_path or not os.path.exists(file_path):
+            print(f"[Cảnh báo] Không tìm thấy file: {file_path}")
+            continue
+
+        target_obj = None
+        base_name = clean_url.split("/")[-1].replace(".glb", "")
+
+        if file_path not in imported_cache:
+            bpy.ops.object.select_all(action="DESELECT")
+            bpy.ops.import_scene.gltf(filepath=file_path)
+
+            imported_objs = bpy.context.selected_objects
+            root_obj = None
+            for obj in imported_objs:
+                if obj.parent is None:
+                    root_obj = obj
+                    break
+
+            if root_obj:
+                root_obj.name = base_name
+                imported_cache[file_path] = root_obj
+                move_to_collection(root_obj, col)
+                target_obj = root_obj
+        else:
+            # Duplicate Linked từ cache
+            base_obj = imported_cache[file_path]
+            bpy.ops.object.select_all(action="DESELECT")
+            select_hierarchy(base_obj)
+            bpy.context.view_layer.objects.active = base_obj
+            bpy.ops.object.duplicate(linked=True)
+
+            duplicated_objs = bpy.context.selected_objects
+            for obj in duplicated_objs:
+                if obj.parent is None:
+                    target_obj = obj
+                    break
+
+            if target_obj:
+                target_obj.name = base_name
+                move_to_collection(target_obj, col)
+
+        # Transform các object GLB
+        if target_obj:
+            target_obj.location = (x, MAP_SIZE[1] - y, z_offset)
+
+            target_obj.rotation_mode = "XYZ"
+            root_model_obj = imported_cache[file_path]
+
+            if "initial_rot_z" not in root_model_obj:
+                root_model_obj["initial_rot_z"] = root_model_obj.rotation_euler[2]
+
+            target_obj.rotation_euler[2] = root_model_obj["initial_rot_z"] - rot + 1.57
+
+            if isinstance(scale, (list, tuple)):
+                target_obj.scale = (scale[0], scale[1], scale[2])
+            else:
+                target_obj.scale = (scale, scale, scale)
+
+
+import_map()
+print("Import thành công!")

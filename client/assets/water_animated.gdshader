@@ -1,14 +1,12 @@
 shader_type spatial;
 render_mode blend_mix, depth_draw_always, cull_disabled, diffuse_burley, specular_schlick_ggx;
 
-// Làm màu nước xanh ngọc sâu và rực rỡ hơn một chút
-uniform vec4 shallow_color : source_color = vec4(0.05, 0.55, 0.75, 0.35); 
-uniform vec4 deep_color : source_color = vec4(0.02, 0.25, 0.5, 0.85);  
-uniform vec4 foam_color : source_color = vec4(0.95, 0.98, 1.0, 0.9); // Giảm Alpha bọt xuống 0.9 cho đỡ chói
-uniform float flow_speed = 0.6; // Giảm tốc độ chảy đi một nửa
-uniform float displacement_height = 4.0; // Sóng vật lý giờ chỉ cao 4 đơn vị, đủ êm ái nhưng vẫn Real 3D
+uniform vec4 shallow_color : source_color = vec4(0.126, 0.303, 0.332, 0.75); 
+uniform vec4 deep_color : source_color = vec4(0.076, 0.253, 0.282, 0.95);  
+uniform vec4 foam_color : source_color = vec4(0.256, 0.433, 0.472, 0.85);
+uniform float flow_speed = 0.3;
+uniform float displacement_height = 4.0;
 
-// --- HỆ THỐNG TẠO NHIỄU ĐA TẦNG ---
 vec2 random2(vec2 p) {
     return fract(sin(vec2(dot(p,vec2(127.1,311.7)),dot(p,vec2(269.5,183.3))))*43758.5453);
 }
@@ -46,7 +44,6 @@ float get_water_height(vec2 world_xz, float time, float edge_dist) {
     float detail = 1.0 - abs(h2 - 0.5) * 2.0;
     float combined_height = pow(ridge * detail, 0.8);
     
-    // Giảm độ văng đập của nước vào bờ
     float shore_surge = noise(world_xz * 0.02 + time * 0.5) * 1.0;
     
     float mask = pow(max(0.0, 1.0 - edge_dist), 1.5) + shore_surge * 0.15;
@@ -62,7 +59,6 @@ varying float v_real_height;
 void vertex() {
     v_uv = UV;
     
-    // ĐỌC VERTEX COLOR ĐỂ TÍNH MÉP CẢ THÂN LẪN CAP (Chống cắt phẳng 2 đầu)
     v_edge_dist = 1.0 - COLOR.r; 
     
     v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
